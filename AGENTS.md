@@ -69,6 +69,15 @@ cached endpoint exists for that video/channel.
     exercised** — validate on a tiny window with the user's OK before trusting it.
   - Caveat: timestamps are minute-precision, assumed "today" (yesterday if the time is in the
     future). Deletion re-scans after each click (DOM mutates).
+  - **BLOCKER (found 2026-06-16):** the per-item delete-click does NOT work from the content
+    script. Clicking the trash opens a confirm dialog whose "Delete" is a Material Web button
+    (`VfPpkd-LgbsSe`) that requires a TRUSTED event. Content scripts can only dispatch synthetic
+    events (verified: programmatic `.click()` and a full `pointerdown→…→click` sequence both leave
+    the item count unchanged). So Adapter A (UI automation) is blocked. Real options: (a) Adapter B
+    — replicate My Activity's `batchexecute` delete RPC with the per-item delete token (mirrors the
+    working YouTube-feedback POST; sidesteps the UI); (b) `chrome.debugger` to dispatch trusted CDP
+    input (heavy permission + visible banner); (c) ship scan+review and have the user click Delete
+    manually. `deleteInWindow` currently reports `deleted:0` honestly when stuck.
 - **Open / next options:** validate the real delete (small window); Feature 3 — Comment search
   (needs API key); more Feature 1 coverage (lockupViewModel), Hate end-to-end, aged replay.
 

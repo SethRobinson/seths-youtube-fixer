@@ -110,8 +110,9 @@ async function sendToTab(tabId: number, message: SyfMessage, tries = 8): Promise
 async function handleWipe(mode: 'scan' | 'delete', startMs: number, endMs: number): Promise<any> {
   let tabId: number | undefined;
   try {
-    // Always use our own fresh background tab so our content script is active.
-    const tab = await chrome.tabs.create({ url: MA_URL, active: false });
+    // Fresh tab so our content script is active. Delete runs focused (active) —
+    // My Activity's confirm dialog is unreliable in a background tab.
+    const tab = await chrome.tabs.create({ url: MA_URL, active: mode === 'delete' });
     tabId = tab.id!;
     await waitTabComplete(tabId);
     await delay(5000); // let the SPA render the activity list

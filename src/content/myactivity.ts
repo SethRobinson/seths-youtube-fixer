@@ -64,23 +64,37 @@ function inWindow(items: ScannedItem[], startMs: number, endMs: number): Scanned
 }
 const toWire = (i: ScannedItem) => ({ title: i.title, timeText: i.timeText ?? '', ms: i.ms ?? 0 });
 
+// Clicking a trash button opens a confirm dialog whose "Delete" control is NOT a
+// <button> — match any clickable element whose text is exactly "Delete".
+function clickConfirmDelete(): boolean {
+  const dialog = document.querySelector('[role="dialog"], [role="alertdialog"]') || document;
+  const els = [...dialog.querySelectorAll('button, [role="button"], a')];
+  const del = els.find((el) => (el.textContent || '').trim().toLowerCase() === 'delete');
+  if (del) {
+    (del as HTMLElement).click();
+    return true;
+  }
+  return false;
+}
+
 async function deleteInWindow(startMs: number, endMs: number): Promise<number> {
   let deleted = 0;
-  for (let pass = 0; pass < 300; pass++) {
-    const matches = inWindow(collect(), startMs, endMs);
-    if (!matches.length) break;
-    matches[0].button.click();
-    await wait(700);
-    // Some deletes show a confirm/snackbar; click an explicit confirm if present.
-    const confirm = [...document.querySelectorAll('button')].find((b) =>
-      /^(delete|confirm|got it)$/i.test((b.textContent || '').trim())
-    );
-    if (confirm) {
-      confirm.click();
-      await wait(400);
+  let stuck = 0;
+  // Stop after 3 passes with no progress so a failed click can't loop forever.
+  for (let pass = 0; pass < 200 && stuck < 3; pass++) {
+    const before = inWindow(collect(), startMs, endMs);
+    if (!before.length) break;
+    before[0].button.click();
+    await wait(850);
+    const confirmed = clickConfirmDelete();
+    await wait(confirmed ? 1000 : 350);
+    const after = inWindow(collect(), startMs, endMs).length;
+    if (after < before.length) {
+      deleted += before.length - after;
+      stuck = 0;
+    } else {
+      stuck++;
     }
-    deleted++;
-    await wait(450);
   }
   return deleted;
 }
