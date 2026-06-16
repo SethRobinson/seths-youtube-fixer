@@ -182,7 +182,9 @@ function extractTuples(root: any): any[] {
 // via YouTube's own menus (and offer the same logging/undo).
 const tokenIndex = new Map<string, any>();
 const undoIndex = new Map<string, any>();
+const videoIndex = new Map<string, any>(); // videoId -> capture tuple, for click-time capture
 function indexTuple(t: any): void {
+  if (t.videoId) videoIndex.set(t.videoId, t);
   if (t.notInterestedToken)
     tokenIndex.set(t.notInterestedToken, {
       type: 'notInterested',
@@ -214,6 +216,24 @@ function captureFrom(root: any): void {
     const items = extractTuples(root);
     for (const t of items) indexTuple(t);
     if (items.length) post('CAPTURE', { items });
+  } catch {
+    /* noop */
+  }
+}
+
+// Capture one specific video on demand (the user just clicked it) so its data is
+// guaranteed in the cache before navigation, even under fast clicking.
+function captureVideo(videoId: string): void {
+  try {
+    let t = videoIndex.get(videoId);
+    if (!t) {
+      const found = extractTuples((window as any).ytInitialData || {}).find((x: any) => x.videoId === videoId);
+      if (found) {
+        indexTuple(found);
+        t = found;
+      }
+    }
+    if (t) post('CAPTURE', { items: [t] });
   } catch {
     /* noop */
   }
@@ -340,10 +360,16 @@ if (__SYF_DEV__) {
 window.addEventListener('message', (e: MessageEvent) => {
   if (e.source !== window) return;
   const d: any = e.data;
-  if (!d || d.__syf !== true || d.dir !== 'to-page' || d.type !== 'REPLAY') return;
-  submitFeedback(d.token).then((result) =>
-    post('REPLAY_RESULT', { action: d.action, mode: d.mode, requestId: d.requestId, result })
-  );
+  if (!d || d.__syf !== true || d.dir !== 'to-page') return;
+  if (d.type === 'CAPTURE_VIDEO' && typeof d.videoId === 'string') {
+    captureVideo(d.videoId);
+    return;
+  }
+  if (d.type === 'REPLAY') {
+    submitFeedback(d.token).then((result) =>
+      post('REPLAY_RESULT', { action: d.action, mode: d.mode, requestId: d.requestId, result })
+    );
+  }
 });
 
 // --- current watch-page context (works across SPA nav via the live player) ---

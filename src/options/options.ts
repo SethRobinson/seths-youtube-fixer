@@ -14,6 +14,8 @@ const hideShorts = $<HTMLInputElement>('hideShorts');
 const savedMsg = $<HTMLSpanElement>('savedMsg');
 const logEl = $<HTMLDivElement>('log');
 const logStatus = $<HTMLDivElement>('logStatus');
+const cacheSizeEl = $<HTMLElement>('cacheSize');
+const cacheBar = $<HTMLElement>('cacheBar');
 
 const esc = (s: unknown) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -52,6 +54,7 @@ $<HTMLButtonElement>('reset').addEventListener('click', async () => {
   await chrome.runtime.sendMessage({ type: 'SYF_RESET' } as SyfMessage);
   await initSettings();
   await renderLog();
+  await renderCacheSize();
   savedMsg.textContent = 'Reset';
   setTimeout(() => (savedMsg.textContent = ''), 1500);
 });
@@ -124,5 +127,24 @@ async function act(entry: ActionLogEntry, kind: 'undo' | 'redo'): Promise<void> 
   void renderLog();
 }
 
+async function renderCacheSize(): Promise<void> {
+  try {
+    const [fbBytes, totalBytes, store] = await Promise.all([
+      chrome.storage.local.getBytesInUse('syf.feedback').catch(() => 0),
+      chrome.storage.local.getBytesInUse(null).catch(() => 0),
+      chrome.storage.local.get('syf.feedback'),
+    ]);
+    const fb: any = store['syf.feedback'];
+    const videos = Object.keys(fb?.videos || {}).length;
+    const channels = Object.keys(fb?.channels || {}).length;
+    const kb = (n: number) => (n / 1024).toLocaleString(undefined, { maximumFractionDigits: 0 });
+    cacheSizeEl.textContent = `${videos.toLocaleString()} videos · ${channels.toLocaleString()} channels · ${kb(fbBytes)} KB (extension total ${kb(totalBytes)} KB, of 2,000-video cap).`;
+    cacheBar.style.width = Math.min(100, (videos / 2000) * 100) + '%';
+  } catch {
+    cacheSizeEl.textContent = '';
+  }
+}
+
 void initSettings();
 void renderLog();
+void renderCacheSize();

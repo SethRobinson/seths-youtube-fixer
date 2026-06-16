@@ -526,6 +526,20 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
   return false;
 });
 
+// When the user clicks a video link, capture THAT exact video immediately (from
+// the current page data) so it's cached by the time we land on it — fixes the
+// fast-click-from-sidebar race. Capture phase so it runs before YouTube navigates.
+document.addEventListener(
+  'click',
+  (e) => {
+    const a = (e.target as Element | null)?.closest?.('a[href*="/watch?v="]');
+    if (!a) return;
+    const m = (a.getAttribute('href') || '').match(/[?&]v=([\w-]{11})/);
+    if (m) window.postMessage({ __syf: true, dir: 'to-page', type: 'CAPTURE_VIDEO', videoId: m[1] }, location.origin);
+  },
+  true
+);
+
 // --- SPA-aware scheduling ---
 let scheduled = false;
 function schedule(): void {

@@ -22,17 +22,33 @@ chrome.runtime.onInstalled.addListener((details) => {
   console.log('[SYF] installed:', details.reason);
 });
 
+// In-memory copies so lookups (every navigation) don't re-parse storage. The SW
+// is the only writer of the cache/log; mutations update these in place. Reset
+// invalidates them. They reload once after the (ephemeral) SW restarts.
+let cacheMem: FeedbackCache | null = null;
+let logMem: ActionLogEntry[] | null = null;
+let settingsMem: SyfSettings | null = null;
+function invalidateMem(): void {
+  cacheMem = logMem = settingsMem = null;
+}
+
 async function loadCache(): Promise<FeedbackCache> {
+  if (cacheMem) return cacheMem;
   const o = await chrome.storage.local.get(FEEDBACK_KEY);
-  return (o[FEEDBACK_KEY] as FeedbackCache) ?? emptyCache();
+  cacheMem = (o[FEEDBACK_KEY] as FeedbackCache) ?? emptyCache();
+  return cacheMem;
 }
 async function loadLog(): Promise<ActionLogEntry[]> {
+  if (logMem) return logMem;
   const o = await chrome.storage.local.get(ACTIONLOG_KEY);
-  return (o[ACTIONLOG_KEY] as ActionLogEntry[]) ?? [];
+  logMem = (o[ACTIONLOG_KEY] as ActionLogEntry[]) ?? [];
+  return logMem;
 }
 async function loadSettings(): Promise<SyfSettings> {
+  if (settingsMem) return settingsMem;
   const o = await chrome.storage.local.get(SETTINGS_KEY);
-  return { ...DEFAULT_SETTINGS, ...((o[SETTINGS_KEY] as SyfSettings) ?? {}) };
+  settingsMem = { ...DEFAULT_SETTINGS, ...((o[SETTINGS_KEY] as SyfSettings) ?? {}) };
+  return settingsMem;
 }
 
 // Serialize storage writes so concurrent messages don't clobber each other.
@@ -47,7 +63,8 @@ function enqueue(fn: () => Promise<void>): Promise<void> {
 function patchSettings(patch: Partial<SyfSettings>): Promise<void> {
   return enqueue(async () => {
     const s = await loadSettings();
-    await chrome.storage.local.set({ [SETTINGS_KEY]: { ...s, ...patch } });
+    settingsMem = { ...s, ...patch };
+    await chrome.storage.local.set({ [SETTINGS_KEY]: settingsMem });
   });
 }
 
@@ -72,31 +89,20 @@ function mergeCapture(cache: FeedbackCache, items: CaptureItem[]): boolean {
     if (it.channelId) v.channelId = it.channelId;
     if (it.channelName) v.channelName = it.channelName;
     if (it.notInterestedToken) {
-      v.notInterested = {
-        token: it.notInterestedToken,
-        undoToken: it.notInterestedUndoToken,
-        capturedAt: now,
-        sourcePage: it.sourcePage,
-      };
+      v.notInterested = { token: it.notInterestedToken, undoToken: it.notInterestedUndoToken, capturedAt: now };
       changed = true;
     }
     if (it.dontRecommendChannelToken) {
-      v.dontRecommendChannel = {
-        token: it.dontRecommendChannelToken,
-        undoToken: it.dontRecommendChannelUndoToken,
-        capturedAt: now,
-        sourcePage: it.sourcePage,
-      };
+      const dr = { token: it.dontRecommendChannelToken, undoToken: it.dontRecommendChannelUndoToken, capturedAt: now };
       if (it.channelId) {
+        // Store channel-level only — don't duplicate the (long) token in the video entry too.
         const c = (cache.channels[it.channelId] ??= { channelId: it.channelId, updatedAt: now });
         if (it.channelName) c.channelName = it.channelName;
-        c.dontRecommendChannel = {
-          token: it.dontRecommendChannelToken,
-          undoToken: it.dontRecommendChannelUndoToken,
-          capturedAt: now,
-          sampleVideoId: it.videoId,
-        };
+        c.dontRecommendChannel = { ...dr, sampleVideoId: it.videoId };
         c.updatedAt = now;
+        delete v.dontRecommendChannel;
+      } else {
+        v.dontRecommendChannel = dr; // fallback when we couldn't extract a channelId
       }
       changed = true;
     }
@@ -262,7 +268,8 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       enqueue(async () => {
         const log = await loadLog();
         log.unshift(entry);
-        await chrome.storage.local.set({ [ACTIONLOG_KEY]: log.slice(0, 1000) });
+        if (log.length > 1000) log.length = 1000;
+        await chrome.storage.local.set({ [ACTIONLOG_KEY]: log });
       });
       sendResponse({ ok: true, id });
       return false;
@@ -326,7 +333,10 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
 
     case 'SYF_RESET':
       // Ordered after pending writes so an in-flight save can't resurrect data.
-      enqueue(() => chrome.storage.local.remove(ALL_STORAGE_KEYS)).then(() => sendResponse({ ok: true }));
+      enqueue(async () => {
+        await chrome.storage.local.remove(ALL_STORAGE_KEYS);
+        invalidateMem();
+      }).then(() => sendResponse({ ok: true }));
       return true;
 
     case 'SYF_STATS':
