@@ -6,3 +6,6 @@ playwright-report/
 .test-profile/
 *.log
 .DS_Store
+
+# Sensitive project info (see AGENTS-secret.md) — never commit
+AGENTS-secret.md
