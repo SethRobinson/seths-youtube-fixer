@@ -16,6 +16,8 @@ const entryPoints = {
   'content/page-bridge': 'src/content/page-bridge.ts',
   'options/options': 'src/options/options.ts',
   'popup/popup': 'src/popup/popup.ts',
+  'wipe/wipe': 'src/wipe/wipe.ts',
+  'log/log': 'src/log/log.ts',
 };
 
 const staticFiles = [
@@ -23,6 +25,8 @@ const staticFiles = [
   ['src/content/styles.css', 'content/styles.css'],
   ['src/options/options.html', 'options/options.html'],
   ['src/popup/popup.html', 'popup/popup.html'],
+  ['src/wipe/wipe.html', 'wipe/wipe.html'],
+  ['src/log/log.html', 'log/log.html'],
 ];
 
 async function copyStatic() {

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Wipe YouTube activity</title>
+    <style>
+      body {
+        font: 14px 'Roboto', Arial, sans-serif;
+        max-width: 640px;
+        margin: 28px auto;
+        padding: 0 18px 48px;
+        background: #0f0f0f;
+        color: #f1f1f1;
+        line-height: 1.5;
+      }
+      h1 { font-size: 19px; }
+      .note { opacity: 0.9; }
+      .presets { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+      .btn {
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        background: #272727;
+        color: #f1f1f1;
+        border-radius: 18px;
+        padding: 8px 14px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .btn:hover { background: #3f3f3f; }
+      .custom input { width: 80px; padding: 7px; border-radius: 8px; border: 1px solid #555; background: transparent; color: inherit; }
+      .list { max-height: 50vh; overflow-y: auto; margin: 12px 0; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; }
+      .item { font-size: 13px; padding: 8px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .t { display: inline-block; min-width: 64px; opacity: 0.6; font-variant-numeric: tabular-nums; }
+      .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+      .delete { background: #cc0000; border-color: #cc0000; }
+      .delete:hover { background: #e02020; }
+      .loading, .done, .error { padding: 16px 2px; }
+      .done { color: #2ba640; }
+      .error { color: #ff8a80; }
+    </style>
+  </head>
+  <body>
+    <h1>Wipe recent YouTube activity</h1>
+    <div id="root"></div>
+    <script src="wipe.js"></script>
+  </body>
+</html>

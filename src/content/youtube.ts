@@ -191,7 +191,7 @@ async function onToggle(action: 'nah' | 'hate-channel'): Promise<void> {
 
 function onClick(action: string): void {
   if (action === 'info') {
-    void openLog();
+    chrome.runtime?.sendMessage?.({ type: 'SYF_OPEN_PAGE', page: 'log' } as SyfMessage).catch(() => {});
     return;
   }
   if (action === 'nah' || action === 'hate-channel') {
@@ -201,7 +201,7 @@ function onClick(action: string): void {
     return;
   }
   if (action === 'wipe') {
-    openWipe();
+    chrome.runtime?.sendMessage?.({ type: 'SYF_OPEN_PAGE', page: 'wipe' } as SyfMessage).catch(() => {});
     return;
   }
   if (action === 'find-comments') {
@@ -303,184 +303,8 @@ function ensureBar(): void {
   void refreshAvailability();
 }
 
-// --- action-log panel ---
-async function openLog(): Promise<void> {
-  closeLog();
-  const res = (await chrome.runtime.sendMessage({ type: 'SYF_GET_LOG' } as SyfMessage)) as LogResult | undefined;
-  const log = res?.log ?? [];
-
-  const overlay = document.createElement('div');
-  overlay.id = MODAL_ID;
-  overlay.className = 'syf-modal';
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeLog();
-  });
-
-  const panel = document.createElement('div');
-  panel.className = 'syf-modal-panel';
-  panel.innerHTML = `<div class="syf-modal-head"><strong>Seth’s YouTube Fixer — action log</strong>
-    <button class="syf-modal-close" title="Close">✕</button></div>`;
-  panel.querySelector('.syf-modal-close')!.addEventListener('click', closeLog);
-
-  const list = document.createElement('div');
-  list.className = 'syf-modal-list';
-  if (!log.length) {
-    list.innerHTML = `<div class="syf-empty">No actions yet. Use Nah / Hate this channel, or YouTube’s own “Not interested” / “Don’t recommend channel”.</div>`;
-  } else {
-    for (const entry of log) list.appendChild(renderLogRow(entry));
-  }
-  panel.appendChild(list);
-  overlay.appendChild(panel);
-  document.body.appendChild(overlay);
-}
-
-function closeLog(): void {
-  document.getElementById(MODAL_ID)?.remove();
-}
-
-function renderLogRow(entry: ActionLogEntry): HTMLElement {
-  const row = document.createElement('div');
-  row.className = 'syf-row' + (entry.undone ? ' syf-undone' : '');
-  const typeLabel = entry.type === 'notInterested' ? 'Not interested' : 'Don’t recommend channel';
-  const when = new Date(entry.ts).toLocaleString();
-  const title = entry.title || entry.channelName || entry.videoId || '(unknown)';
-  row.innerHTML = `<div class="syf-row-meta">
-      <div class="syf-row-title">${escapeHtml(title)}</div>
-      <div class="syf-row-sub">${typeLabel} · <span class="syf-src syf-src-${entry.source}">${entry.source}</span> · ${escapeHtml(when)}${entry.undone ? ' · <em>undone</em>' : ''}</div>
-    </div>`;
-
-  const btn = document.createElement('button');
-  btn.className = 'syf-row-btn';
-  if (!entry.undone && entry.undoToken) {
-    btn.textContent = 'Undo';
-    btn.addEventListener('click', () => void logUndo(entry));
-  } else if (entry.undone && entry.actionToken) {
-    btn.textContent = 'Redo';
-    btn.addEventListener('click', () => void logRedo(entry));
-  } else {
-    btn.style.visibility = 'hidden';
-  }
-  row.appendChild(btn);
-  return row;
-}
-
-async function logUndo(entry: ActionLogEntry): Promise<void> {
-  if (!entry.undoToken) return;
-  const res = await replay(entry.undoToken, 'undo');
-  if (replayOk(res)) {
-    await chrome.runtime.sendMessage({ type: 'SYF_MARK_UNDONE', id: entry.id } as SyfMessage);
-    await openLog();
-    void refreshAvailability();
-  }
-}
-
-async function logRedo(entry: ActionLogEntry): Promise<void> {
-  if (!entry.actionToken) return;
-  const res = await replay(entry.actionToken, 'apply');
-  if (replayOk(res)) {
-    await chrome.runtime.sendMessage({
-      type: 'SYF_LOG_ACTION',
-      entry: {
-        type: entry.type,
-        source: 'app',
-        videoId: entry.videoId,
-        channelId: entry.channelId,
-        title: entry.title,
-        channelName: entry.channelName,
-        actionToken: entry.actionToken,
-        undoToken: entry.undoToken,
-      },
-    } as SyfMessage);
-    await openLog();
-    void refreshAvailability();
-  }
-}
-
-// --- Wipe history (Feature 2) ---
-const WIPE_PRESETS = [15, 30, 60, 120];
-const fmtTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-function closeWipe(): void {
-  document.getElementById('syf-wipe')?.remove();
-}
-
-function openWipe(): void {
-  closeWipe();
-  const overlay = document.createElement('div');
-  overlay.id = 'syf-wipe';
-  overlay.className = 'syf-modal';
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeWipe();
-  });
-  const panel = document.createElement('div');
-  panel.className = 'syf-modal-panel';
-  overlay.appendChild(panel);
-  document.body.appendChild(overlay);
-  renderWipePick(panel);
-}
-
-function renderWipePick(panel: HTMLElement): void {
-  panel.innerHTML = `
-    <div class="syf-modal-head"><strong>Wipe recent YouTube activity</strong><button class="syf-modal-close" title="Close">✕</button></div>
-    <div class="syf-wipe-body">
-      <p class="syf-wipe-note">Deletes <b>all</b> YouTube activity (watches &amp; searches) in the chosen window from your Google account via My Activity. This affects your account — not just this browser — and <b>can’t be undone</b>.</p>
-      <div class="syf-wipe-presets">
-        ${WIPE_PRESETS.map((m) => `<button class="syf-btn syf-wipe-preset" data-min="${m}">Last ${m} min</button>`).join('')}
-        <span class="syf-wipe-custom"><input id="syf-wipe-cmin" type="number" min="1" max="1440" placeholder="custom" /> min</span>
-      </div>
-    </div>`;
-  panel.querySelector('.syf-modal-close')!.addEventListener('click', closeWipe);
-  panel.querySelectorAll('.syf-wipe-preset').forEach((b) =>
-    b.addEventListener('click', () => void startWipeScan(panel, Number((b as HTMLElement).dataset.min)))
-  );
-  const cmin = panel.querySelector('#syf-wipe-cmin') as HTMLInputElement;
-  cmin.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && Number(cmin.value) > 0) void startWipeScan(panel, Number(cmin.value));
-  });
-}
-
-async function startWipeScan(panel: HTMLElement, minutes: number): Promise<void> {
-  const body = panel.querySelector('.syf-wipe-body') as HTMLElement;
-  body.innerHTML = `<div class="syf-wipe-loading">Scanning My Activity for the last ${minutes} min…</div>`;
-  const endMs = Date.now();
-  const startMs = endMs - minutes * 60_000;
-  const res = await chrome.runtime.sendMessage({ type: 'SYF_WIPE', mode: 'scan', startMs, endMs } as SyfMessage);
-  renderWipeReview(body, startMs, endMs, res);
-}
-
-function renderWipeReview(body: HTMLElement, startMs: number, endMs: number, res: any): void {
-  if (!res?.ok) {
-    body.innerHTML = `<div class="syf-wipe-error">Scan failed: ${escapeHtml(res?.error || 'unknown')}.<br/>Make sure you’re signed into Google in this browser.</div>`;
-    return;
-  }
-  const matched: any[] = res.matched || [];
-  if (!matched.length) {
-    body.innerHTML = `<div class="syf-wipe-loading">No YouTube activity found between <b>${fmtTime(startMs)}</b> and <b>${fmtTime(endMs)}</b>.</div>`;
-    return;
-  }
-  body.innerHTML = `
-    <p class="syf-wipe-note">About to delete <b>${matched.length}</b> item(s) from <b>${fmtTime(startMs)}</b> to <b>${fmtTime(endMs)}</b>. <b>This can’t be undone.</b></p>
-    <div class="syf-wipe-list">${matched
-      .map((m) => `<div class="syf-wipe-item"><span class="syf-wipe-t">${escapeHtml(m.timeText)}</span> ${escapeHtml((m.title || '').slice(0, 72))}</div>`)
-      .join('')}</div>
-    <div class="syf-wipe-actions">
-      <button class="syf-btn syf-wipe-cancel">Cancel</button>
-      <button class="syf-btn syf-wipe-delete">Delete ${matched.length} item(s)</button>
-    </div>`;
-  body.querySelector('.syf-wipe-cancel')!.addEventListener('click', closeWipe);
-  body.querySelector('.syf-wipe-delete')!.addEventListener('click', () => void doWipeDelete(body, startMs, endMs));
-}
-
-async function doWipeDelete(body: HTMLElement, startMs: number, endMs: number): Promise<void> {
-  body.innerHTML = `<div class="syf-wipe-loading">Deleting via My Activity (background tab)…</div>`;
-  const res = await chrome.runtime.sendMessage({ type: 'SYF_WIPE', mode: 'delete', startMs, endMs } as SyfMessage);
-  if (res?.ok) {
-    const remain = res.matched?.length ? ` <em>${res.matched.length} still match — re-run to retry.</em>` : '';
-    body.innerHTML = `<div class="syf-wipe-done">✓ Deleted ${res.deleted ?? 0} item(s) from ${fmtTime(startMs)} to ${fmtTime(endMs)}.${remain}</div>`;
-  } else {
-    body.innerHTML = `<div class="syf-wipe-error">Delete failed: ${escapeHtml(res?.error || 'unknown')}.</div>`;
-  }
-}
+// The action-log panel and Wipe-history panel now live in standalone extension
+// pages (src/log/ and src/wipe/), opened in their own tabs via SYF_OPEN_PAGE.
 
 // --- messages from the MAIN-world bridge ---
 window.addEventListener('message', (e: MessageEvent) => {
