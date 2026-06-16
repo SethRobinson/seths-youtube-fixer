@@ -1,0 +1,57 @@
+.syf-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.2));
+  border-radius: 12px;
+  background: var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.05));
+  font-family: 'Roboto', Arial, sans-serif;
+}
+
+.syf-brand {
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  opacity: 0.7;
+  margin-right: 4px;
+  color: var(--yt-spec-text-primary, inherit);
+}
+
+.syf-btn {
+  cursor: pointer;
+  border: none;
+  border-radius: 18px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--yt-spec-button-chip-background-hover, #272727);
+  color: var(--yt-spec-text-primary, #f1f1f1);
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.syf-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.syf-btn:not([disabled]):hover {
+  background: #3f3f3f;
+}
+
+.syf-btn[data-state='active'] {
+  background: #3ea6ff;
+  color: #0f0f0f;
+}
+
+.syf-btn[data-state='sent'] {
+  background: #2ba640;
+  color: #fff;
+}
+
+.syf-btn[data-state='error'] {
+  background: #cc0000;
+  color: #fff;
+}

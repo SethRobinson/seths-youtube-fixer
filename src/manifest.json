@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Seth's YouTube Fixer",
+  "version": "0.1.0",
+  "description": "Power-user controls for YouTube: Nah, Hate this channel, fast history wipe, and comment search.",
+  "permissions": ["storage", "scripting", "tabs", "activeTab", "sidePanel"],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://m.youtube.com/*",
+    "https://myactivity.google.com/*",
+    "https://www.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content/page-bridge.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content/youtube.js"],
+      "css": ["content/styles.css"],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Seth's YouTube Fixer"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  }
+}

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Seth's YouTube Fixer — Settings</title>
+    <style>
+      body {
+        font: 14px 'Roboto', Arial, sans-serif;
+        max-width: 640px;
+        margin: 24px auto;
+        padding: 0 16px;
+        color: #0f0f0f;
+        background: #fff;
+      }
+      h1 { font-size: 18px; }
+      label { display: block; margin: 16px 0 4px; font-weight: 600; }
+      input[type='text'] {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        box-sizing: border-box;
+        font: inherit;
+      }
+      small { color: #666; }
+      button {
+        margin-top: 16px;
+        padding: 8px 18px;
+        border: none;
+        border-radius: 8px;
+        background: #065fd4;
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .saved { color: #2ba640; margin-left: 12px; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <h1>Seth's YouTube Fixer</h1>
+    <label for="apiKey">YouTube Data API key</label>
+    <input id="apiKey" type="text" placeholder="AIza…" autocomplete="off" spellcheck="false" />
+    <small>Used only for comment search. Stored locally; never synced or sent anywhere else.</small>
+    <div>
+      <button id="save">Save</button>
+      <span id="savedMsg" class="saved"></span>
+    </div>
+    <script src="options.js"></script>
+  </body>
+</html>

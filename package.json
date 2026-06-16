@@ -1,0 +1,24 @@
+{
+  "name": "seths-youtube-fixer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Power-user controls for YouTube: Nah, Hate this channel, fast history wipe, and comment search.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "setup": "node scripts/setup.mjs",
+    "reload": "node scripts/build.mjs && node scripts/reload.mjs",
+    "drive": "node scripts/build.mjs && node scripts/reload.mjs && node scripts/drive.mjs",
+    "pretest": "node scripts/build.mjs && node scripts/reload.mjs",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/chrome": "*",
+    "@types/node": "^22",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  }
+}

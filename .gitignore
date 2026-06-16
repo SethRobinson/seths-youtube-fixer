@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dist-tsc/
+test-results/
+playwright-report/
+.test-profile/
+*.log
+.DS_Store
