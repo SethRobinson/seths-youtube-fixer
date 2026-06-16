@@ -30,7 +30,10 @@ cached endpoint exists for that video/channel.
   "Not interested" (`feedbackToken`, icon HIDE) and "Don't recommend channel" (icon REMOVE)
   tokens, keyed by video/channel in the SW cache (`syf.feedback`, 7-day TTL; `unlimitedStorage` +
   LRU-capped at 2000 videos/2000 channels so it can't hit the 10 MB quota and silently drop
-  captures). On a watch
+  captures). The SW keeps cache/log/settings **in memory** (no re-parse per lookup; invalidated on
+  reset). The DR token is stored channel-level only (not duplicated in the video entry) → ~0.8 KB/
+  video. Clicking a video link triggers a **click-time capture** of that exact video
+  (`CAPTURE_VIDEO` → bridge `videoIndex`) so fast clicks still cache the clicked video. On a watch
   page, Nah/Hate light up when a token is cached. **Clicks are DRY-RUN — nothing is POSTed
   yet.** Measure with `node scripts/measure-feedback.mjs`.
   - Coverage (fixed 2026-06-16): the extractor now handles BOTH classic (`videoId`+`menu`) and the
