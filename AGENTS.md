@@ -83,6 +83,25 @@ cached endpoint exists for that video/channel.
   - **Hide Shorts** setting toggles `html.syf-hide-shorts`; CSS hides Shorts shelves/cards/nav (live
     via `storage.onChanged`). Settings include `hideShorts`, `feedbackTtlDays`, `lastHistoryPaused`,
     `dismissedWarnings`. No current setting needs a page reload (all apply live).
+- **Security & known residuals** (from the 2026-06-16 adversarial review; fixes landed for storage
+  races, the debug globals, CSP, sender check, and transient-vs-permanent history backoff). Still
+  open, low-risk for personal single-account English use — revisit before any wider distribution:
+  - The MAIN-world bridge still does the authenticated `/youtubei/v1/feedback` POST and accepts a
+    `to-page` `REPLAY` `postMessage` whose guard fields are page-forgeable. A script already running
+    in the youtube.com MAIN world could trigger feedback writes (bounded to Nah/Hate/pause — not
+    account takeover). Proper fix: nonce-gate the channel, or move submission to the isolated world
+    (read SAPISID from `document.cookie` + `ytcfg` from the inline script).
+  - History button label is driven by cached `lastHistoryPaused` (default = assume ON). The *action
+    and toast are always correct* (the toggle reads live state from /feed/history first), but on a
+    fresh install / after toggling via YouTube's own UI the pre-click label can be stale until the
+    first toggle. A live state read on bar build would fix it but means opening /feed/history.
+  - History token extraction matches English labels (`pause/turn on watch history`) — non-English
+    locales fall through to the "control gone" backoff.
+  - Settings dialog frames `options.html` from youtube.com (needed for the feature); a malicious
+    youtube.com page could clickjack the one-click Undo/Redo (Reset is behind a native confirm). The
+    CSP blocks non-youtube origins.
+  - `relayReplay` targets the first open youtube.com tab — a multi-account user could submit a token
+    against the wrong account.
 - **Feature 2 — Wipe history (scan + UI DONE; delete built, NOT yet validated):**
   - `src/content/myactivity.ts` runs on myactivity.google.com: pairs each "Delete activity item"
     button with the timestamp preceding it in document order (handles grouped times), filters to a
