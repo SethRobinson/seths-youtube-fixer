@@ -89,9 +89,14 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       loadCache().then((c) => {
         const v = c.videos[msg.videoId];
         const ch = msg.channelId ? c.channels[msg.channelId] : undefined;
-        const nah = !!(v && isFresh(v.notInterested));
-        const hate = !!((ch && isFresh(ch.dontRecommendChannel)) || (v && isFresh(v.dontRecommendChannel)));
-        sendResponse({ ok: true, nah, hate, videoKnown: !!v });
+        const nahToken = v && isFresh(v.notInterested) ? v.notInterested!.token : undefined;
+        const hateToken =
+          ch && isFresh(ch.dontRecommendChannel)
+            ? ch.dontRecommendChannel!.token
+            : v && isFresh(v.dontRecommendChannel)
+              ? v.dontRecommendChannel!.token
+              : undefined;
+        sendResponse({ ok: true, nah: !!nahToken, hate: !!hateToken, videoKnown: !!v, nahToken, hateToken });
       });
       return true; // async response
 

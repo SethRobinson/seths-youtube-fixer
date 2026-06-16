@@ -1,6 +1,6 @@
 // Isolated-world content script: injects the button bar, forwards captures from
-// the MAIN-world bridge to the service worker, and reflects feedback availability
-// on the watch page. Nah / Hate clicks are DRY-RUN for now (nothing is submitted).
+// the MAIN-world bridge to the service worker, reflects feedback availability,
+// and submits real feedback (via the bridge) on click.
 import type { SyfMessage, LookupResult } from '../common/messages';
 
 const TAG = '[SYF]';
@@ -24,15 +24,19 @@ const BUTTONS: BtnDef[] = [
   { action: 'find-comments', label: 'Find in comments', tip: 'Search all public comments and replies on this video.' },
 ];
 
+const LABELS: Record<string, string> = { nah: 'Nah', 'hate-channel': 'Hate this channel' };
+const SENT_LABELS: Record<string, string> = { nah: 'Nah sent ✓', 'hate-channel': 'Channel hidden ✓' };
+
 const buttons: Record<string, HTMLButtonElement> = {};
 let current: { videoId?: string; channelId?: string; channelName?: string; title?: string } = {};
+let tokens: { nah?: string; hate?: string } = {};
+const sentFor: { nah?: string; hate?: string } = {}; // action -> videoId already submitted
 
 function getVideoId(): string | null {
   const u = new URL(location.href);
   return u.pathname === '/watch' ? u.searchParams.get('v') : null;
 }
 
-// --- button state helpers ---
 function setEnabled(btn: HTMLButtonElement, tip: string): void {
   btn.disabled = false;
   btn.dataset.state = 'ready';
@@ -44,17 +48,44 @@ function setDisabled(btn: HTMLButtonElement, tip: string): void {
   btn.title = tip;
 }
 
-function onClick(action: string): void {
+function submit(action: 'nah' | 'hate-channel'): void {
+  const token = action === 'nah' ? tokens.nah : tokens.hate;
   const btn = buttons[action];
-  if (action === 'nah' || action === 'hate-channel') {
-    // DRY RUN — capture/availability phase. Real submission lands in the next iteration.
-    console.log(TAG, 'DRY-RUN: would submit', action, 'for', current);
+  if (!token || !btn) return;
+  btn.disabled = true;
+  btn.dataset.state = 'loading';
+  btn.textContent = 'Sending…';
+  window.postMessage({ __syf: true, dir: 'to-page', type: 'REPLAY', action, token }, location.origin);
+}
+
+function onReplayResult(action: string, result: any): void {
+  const btn = buttons[action];
+  if (!btn) return;
+  const processed = result?.json?.feedbackResponses?.[0]?.isProcessed;
+  const ok = !!(result?.ok && (processed ?? true));
+  if (ok) {
     btn.dataset.state = 'sent';
-    btn.textContent = action === 'nah' ? 'Nah ✓ (dry-run)' : 'Hated ✓ (dry-run)';
+    btn.textContent = SENT_LABELS[action] ?? '✓';
+    btn.disabled = true;
+    btn.title = 'Submitted to YouTube.';
+    if (current.videoId) sentFor[action === 'nah' ? 'nah' : 'hate'] = current.videoId;
+    console.log(TAG, action, 'submitted (isProcessed:', processed, ')');
+  } else {
+    btn.dataset.state = 'error';
+    btn.textContent = action === 'nah' ? 'Nah failed' : 'Failed';
+    btn.title = `Cached token rejected (status ${result?.status ?? '?'}). Browse to recapture a fresh one.`;
+    console.warn(TAG, action, 'failed', result);
     setTimeout(() => {
       btn.dataset.state = 'ready';
-      btn.textContent = action === 'nah' ? 'Nah' : 'Hate this channel';
-    }, 2500);
+      btn.disabled = false;
+      btn.textContent = LABELS[action];
+    }, 3500);
+  }
+}
+
+function onClick(action: string): void {
+  if (action === 'nah' || action === 'hate-channel') {
+    submit(action);
     return;
   }
   console.log(TAG, 'click:', action, '(not wired yet)');
@@ -97,6 +128,16 @@ function removeBar(): void {
   document.getElementById(BAR_ID)?.remove();
 }
 
+// Reflect an already-submitted state so frequent refreshes don't re-enable a sent button.
+function showSent(action: 'nah' | 'hate-channel'): void {
+  const btn = buttons[action];
+  if (!btn) return;
+  btn.dataset.state = 'sent';
+  btn.disabled = true;
+  btn.textContent = SENT_LABELS[action];
+  btn.title = 'Submitted to YouTube.';
+}
+
 async function refreshAvailability(): Promise<void> {
   const videoId = getVideoId();
   const nah = buttons['nah'];
@@ -110,9 +151,14 @@ async function refreshAvailability(): Promise<void> {
   try {
     const msg: SyfMessage = { type: 'SYF_LOOKUP', videoId, channelId: current.channelId };
     const r = (await chrome.runtime.sendMessage(msg)) as LookupResult | undefined;
-    if (r?.nah) setEnabled(nah, 'Send YouTube’s real “Not interested” for this video (cached). Dry-run for now.');
+    tokens = { nah: r?.nahToken, hate: r?.hateToken };
+
+    if (sentFor.nah === videoId) showSent('nah');
+    else if (r?.nah) setEnabled(nah, 'Send YouTube’s real “Not interested” for this video (cached).');
     else setDisabled(nah, NAH_UNAVAIL);
-    if (r?.hate) setEnabled(hate, 'Send YouTube’s real “Don’t recommend channel” (cached). Dry-run for now.');
+
+    if (sentFor.hate === videoId) showSent('hate-channel');
+    else if (r?.hate) setEnabled(hate, 'Send YouTube’s real “Don’t recommend channel” (cached).');
     else setDisabled(hate, HATE_UNAVAIL);
   } catch {
     /* SW may be waking; next schedule() retries */
@@ -126,7 +172,7 @@ function ensureBar(): void {
     current = {};
     return;
   }
-  if (videoId !== current.videoId) current = { videoId }; // reset channel on video change
+  if (videoId !== current.videoId) current = { videoId };
 
   if (!document.getElementById(BAR_ID)) {
     const mount = findMount();
@@ -139,7 +185,7 @@ function ensureBar(): void {
   void refreshAvailability();
 }
 
-// --- messages from the MAIN-world bridge ---
+// messages from the MAIN-world bridge
 window.addEventListener('message', (e: MessageEvent) => {
   if (e.source !== window) return;
   const d = e.data;
@@ -151,19 +197,18 @@ window.addEventListener('message', (e: MessageEvent) => {
       break;
     }
     case 'WATCH_CONTEXT': {
-      current = {
-        videoId: d.videoId,
-        channelId: d.channelId,
-        channelName: d.channelName,
-        title: d.title,
-      };
+      current = { videoId: d.videoId, channelId: d.channelId, channelName: d.channelName, title: d.title };
       void refreshAvailability();
+      break;
+    }
+    case 'REPLAY_RESULT': {
+      onReplayResult(d.action, d.result);
       break;
     }
   }
 });
 
-// --- SPA-aware scheduling ---
+// SPA-aware scheduling
 let scheduled = false;
 function schedule(): void {
   if (scheduled) return;

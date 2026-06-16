@@ -129,6 +129,74 @@ window.fetch = function (this: unknown, ...args: any[]) {
   return p;
 };
 
+// --- real feedback submission (POST /youtubei/v1/feedback) ---
+const YT_ORIGIN = 'https://www.youtube.com';
+
+function getCookie(name: string): string {
+  const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
+async function sha1Hex(s: string): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// YouTube authenticates innertube writes with: SAPISIDHASH <ts>_<sha1(ts SAPISID origin)>
+async function sapisidHash(): Promise<string> {
+  const sap =
+    getCookie('SAPISID') || getCookie('__Secure-3PAPISID') || getCookie('__Secure-1PAPISID');
+  const ts = Math.floor(Date.now() / 1000);
+  const h = await sha1Hex(`${ts} ${sap} ${YT_ORIGIN}`);
+  return `SAPISIDHASH ${ts}_${h}`;
+}
+
+function ytcfgGet(k: string): any {
+  const c: any = (window as any).ytcfg;
+  return c?.get?.(k) ?? c?.data_?.[k];
+}
+
+async function submitFeedback(token: string): Promise<any> {
+  try {
+    const apiKey = ytcfgGet('INNERTUBE_API_KEY');
+    const res = await origFetch(`${YT_ORIGIN}/youtubei/v1/feedback?key=${apiKey}&prettyPrint=false`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: await sapisidHash(),
+        'X-Origin': YT_ORIGIN,
+        'X-Goog-AuthUser': '0',
+        'X-Youtube-Client-Name': String(ytcfgGet('INNERTUBE_CONTEXT_CLIENT_NAME') ?? 1),
+        'X-Youtube-Client-Version': String(ytcfgGet('INNERTUBE_CONTEXT_CLIENT_VERSION') ?? ''),
+      },
+      body: JSON.stringify({
+        context: ytcfgGet('INNERTUBE_CONTEXT'),
+        feedbackTokens: [token],
+        isFeedbackTokenUnencrypted: false,
+        shouldMerge: false,
+      }),
+    });
+    const json = await res.json().catch(() => null);
+    return { ok: res.ok, status: res.status, json };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+// Exposed for controlled validation from the test harness.
+(window as any).__syfSubmitFeedback = submitFeedback;
+
+// Real submission requested by the isolated content script (button UI path).
+window.addEventListener('message', (e: MessageEvent) => {
+  if (e.source !== window) return;
+  const d: any = e.data;
+  if (!d || d.__syf !== true || d.dir !== 'to-page' || d.type !== 'REPLAY') return;
+  submitFeedback(d.token).then((result) =>
+    post('REPLAY_RESULT', { action: d.action, requestId: d.requestId, result })
+  );
+});
+
 // --- current watch-page context (works across SPA nav via the live player) ---
 function readWatchContext(): void {
   try {

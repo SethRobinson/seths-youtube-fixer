@@ -34,9 +34,24 @@ cached endpoint exists for that video/channel.
   - Coverage note: modern home cards are mostly `lockupViewModel` (no inline tokens), so only
     a subset of home videos yield tokens; coverage grows across surfaces (search, up-next).
     channelId isn't always in the renderer — video-level token is the reliable fallback.
-- **Next:** Feature 1b — real feedback POST (`/youtubei/v1/feedback`, needs SAPISIDHASH auth
-  header), gated on first verifying a replayed token actually registers (mutates the real
-  account, so test deliberately). Then improve coverage + add Undo.
+- **Feature 1b — replay VALIDATED:** `POST /youtubei/v1/feedback` with the cached token works.
+  Auth = `Authorization: SAPISIDHASH <ts>_<sha1(ts SAPISID origin)>` + `X-Goog-AuthUser`,
+  `X-Origin`, innertube context/client from `ytcfg`. A home-feed token replayed on the watch
+  page returned `feedbackResponses:[{isProcessed:true}]`. So same-session capture→replay is
+  confirmed (cross-session/aged tokens still untested). Bridge exposes `submitFeedback()` and a
+  `REPLAY` message handler; `window.__syfSubmitFeedback(token)` is the test hook
+  (`scripts/validate-replay.mjs`).
+  - **Undo caveat:** the "Not interested" response has NO undo token — only "Tell us why" reason
+    tokens. There is no clean programmatic undo for watch-page Nah (real Undo lives in the feed's
+    replacement card). Don't show a fake Undo; "Nah sent ✓" is the honest end state.
+- **Feature 1 — DONE:** clicking the button submits real feedback. Nah verified end-to-end
+  (click → bridge POST → `isProcessed:true` → "Nah sent ✓"). Hate uses the identical endpoint/
+  path (validated via Nah; not yet exercised by a click). Honest sent/error states, no fake Undo.
+- **Open / next options:** (a) Feature 2 — Wipe history (My Activity); (b) Feature 3 — Comment
+  search (YouTube Data API); (c) Feature 1 polish — improve capture coverage (lockupViewModel /
+  more surfaces), exercise Hate end-to-end, test aged/cross-session token replay.
+
+Dev/measurement scripts: `scripts/{recon-feedback,measure-feedback,validate-replay,test-click}.mjs`.
 
 ## Layout
 

@@ -13,6 +13,8 @@ export interface LookupResult {
   nah: boolean;
   hate: boolean;
   videoKnown: boolean;
+  nahToken?: string;
+  hateToken?: string;
 }
 
 export interface StatsResult {
