@@ -1,8 +1,9 @@
 .syf-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex-wrap: nowrap; /* keep all buttons on one row */
+  container-type: inline-size; /* buttons scale off the bar's width (see .syf-btn clamps) */
   margin: 10px 0;
   padding: 8px 10px;
   border: 1px solid var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.2));
@@ -11,21 +12,15 @@
   font-family: 'Roboto', Arial, sans-serif;
 }
 
-.syf-brand {
-  font-weight: 600;
-  font-size: 12px;
-  letter-spacing: 0.2px;
-  opacity: 0.7;
-  margin-right: 4px;
-  color: var(--yt-spec-text-primary, inherit);
-}
-
 .syf-btn {
   cursor: pointer;
   border: none;
   border-radius: 18px;
-  padding: 8px 14px;
-  font-size: 13px;
+  /* Scale down with the bar's width so all buttons stay on one row on narrow
+     columns; capped at the comfortable desktop size on wide ones. */
+  white-space: nowrap;
+  padding: clamp(4px, 0.8cqi, 8px) clamp(7px, 1.6cqi, 14px);
+  font-size: clamp(8px, 1.6cqi, 13px);
   font-weight: 600;
   background: var(--yt-spec-button-chip-background-hover, #272727);
   color: var(--yt-spec-text-primary, #f1f1f1);

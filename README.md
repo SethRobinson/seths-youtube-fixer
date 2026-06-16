@@ -2,8 +2,8 @@
 
 A Manifest V3 Chromium extension that adds power-user controls to YouTube:
 
-- **Nah** — send YouTube's real *Not interested* feedback for the current video.
-- **Hate this channel** — send YouTube's real *Don't recommend channel* feedback.
+- **Less like this** — send YouTube's real *Not interested* feedback for the current video.
+- **Don't recommend channel** — send YouTube's real *Don't recommend channel* feedback.
 - **Wipe history** — fast-delete recent YouTube activity via Google My Activity.
 - **Find in comments** — search all public comments/replies via the YouTube Data API.
 
@@ -55,6 +55,27 @@ npm test          # rebuild + reload + full Playwright suite
 
 Environment overrides: `SYF_PROFILE` (profile dir), `SYF_CDP_PORT` (default 9222),
 `SYF_CHROME` (chrome.exe path).
+
+## API key (for *Find in comments*)
+
+The **Find in comments** feature calls the **YouTube Data API v3**, which needs a free
+API key. You set it in the extension via **ℹ Info → API key**. To get one:
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/), create or pick a project.
+2. **Enable the API:** APIs & Services → **Library** → search **YouTube Data API v3** →
+   **Enable** ([direct link](https://console.cloud.google.com/apis/library/youtube.googleapis.com)).
+   This is the **only** API you need — ignore the Cloud Trace / Service Usage / Telemetry / etc.
+   entries Google pre-enables in every new project.
+3. **Wait a few minutes.** A freshly-enabled API takes a bit to propagate; until it does, the
+   new-key dialog's *API restrictions* list shows **"No items to display"** and won't let you
+   finish. Grab a coffee, then reload the page.
+4. APIs & Services → **Credentials** → **Create credentials → API key**.
+5. Recommended: **restrict the key to YouTube Data API v3** only.
+6. Copy the key (it starts with `AIza…`) and paste it into **ℹ Info → API key**.
+
+You do **not** need to configure the OAuth consent screen — that's only for apps where users
+sign in with Google; this key reads public data. Likewise ignore the *"Authenticate API calls
+through a service account"* / Vertex / Gemini options in that dialog.
 
 ## Privacy
 

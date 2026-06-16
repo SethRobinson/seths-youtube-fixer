@@ -22,9 +22,9 @@ const HATE_UNAVAIL =
 
 // Shown as a toast when a grayed-out button is clicked.
 const NAH_REASON =
-  '“Hate content” isn’t available for this video yet. YouTube only exposes a real “Not interested” action on recommendation cards — so we can only send it for videos we’ve seen as a card. Browse Home, Search, or the Up-next sidebar until this video appears there, then come back.';
+  '“Less like this” isn’t available for this video yet. YouTube only exposes a real “Not interested” action on recommendation cards — so we can only send it for videos we’ve seen as a card. Browse Home, Search, or the Up-next sidebar until this video appears there, then come back.';
 const HATE_REASON =
-  '“Hate channel” isn’t available yet. We haven’t captured YouTube’s real “Don’t recommend channel” action for this creator this session. Browse a few of their videos as recommendation cards (Home / Search / Up-next), then return here.';
+  '“Don’t recommend channel” isn’t available yet. We haven’t captured YouTube’s real “Don’t recommend channel” action for this creator this session. Browse a few of their videos as recommendation cards (Home / Search / Up-next), then return here.';
 
 interface BtnDef {
   action: string;
@@ -33,16 +33,16 @@ interface BtnDef {
 }
 
 const BUTTONS: BtnDef[] = [
-  { action: 'nah', label: 'Hate content', tip: NAH_UNAVAIL },
-  { action: 'hate-channel', label: 'Hate channel', tip: HATE_UNAVAIL },
+  { action: 'nah', label: 'Less like this', tip: NAH_UNAVAIL },
+  { action: 'hate-channel', label: 'Don’t recommend channel', tip: HATE_UNAVAIL },
   { action: 'pause-history', label: '⏸ Pause history', tip: 'Open YouTube’s watch-history settings to pause or resume recording.' },
   { action: 'wipe', label: 'Wipe history', tip: 'Delete recent YouTube activity via My Activity.' },
   { action: 'find-comments', label: 'Find in comments', tip: 'Search all public comments and replies.' },
-  { action: 'info', label: 'ℹ Info', tip: 'View and undo your feedback actions.' },
+  { action: 'info', label: 'ℹ Info', tip: 'Seth’s YouTube Fixer — settings, feedback log & undo.' },
 ];
 
-const LABELS: Record<string, string> = { nah: 'Hate content', 'hate-channel': 'Hate channel' };
-const SENT_LABELS: Record<string, string> = { nah: 'Content hidden ✓', 'hate-channel': 'Channel hidden ✓' };
+const LABELS: Record<string, string> = { nah: 'Less like this', 'hate-channel': 'Don’t recommend channel' };
+const SENT_LABELS: Record<string, string> = { nah: 'Less like this ✓', 'hate-channel': 'Won’t recommend ✓' };
 
 interface ActionState {
   token?: string;
@@ -350,11 +350,6 @@ function buildBar(): HTMLElement {
   const bar = document.createElement('div');
   bar.id = BAR_ID;
   bar.className = 'syf-bar';
-
-  const brand = document.createElement('span');
-  brand.className = 'syf-brand';
-  brand.textContent = 'Seth’s YouTube Fixer';
-  bar.appendChild(brand);
 
   for (const def of BUTTONS) {
     const btn = document.createElement('button');

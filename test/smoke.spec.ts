@@ -28,7 +28,7 @@ test('injects the SYF button bar on a watch page', async ({ context }) => {
 
   const bar = page.locator('#syf-bar');
   await expect(bar).toBeVisible({ timeout: 45_000 });
-  await expect(bar.locator('.syf-btn')).toHaveCount(4);
+  await expect(bar.locator('.syf-btn')).toHaveCount(6);
 
   await page.screenshot({ path: 'test-results/watch-bar.png' });
   console.log('SYF logs seen:', logs.filter((l) => l.includes('[SYF]')));

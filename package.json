@@ -2,7 +2,7 @@
   "name": "seths-youtube-fixer",
   "version": "0.1.0",
   "private": true,
-  "description": "Power-user controls for YouTube: Nah, Hate this channel, fast history wipe, and comment search.",
+  "description": "Power-user controls for YouTube: Less like this, Don't recommend channel, fast history wipe, and comment search.",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",

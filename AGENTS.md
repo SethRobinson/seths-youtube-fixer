@@ -12,18 +12,21 @@ A Manifest V3 Chromium extension (TypeScript + esbuild) adding power-user contro
 YouTube. Personal project; owner is Seth. Four features, on a button bar injected onto
 the watch page:
 
-1. **Nah** — submit YouTube's real *Not interested* feedback for the current video.
-2. **Hate this channel** — submit YouTube's real *Don't recommend channel* feedback.
+1. **Less like this** — submit YouTube's real *Not interested* feedback for the current video.
+2. **Don't recommend channel** — submit YouTube's real *Don't recommend channel* feedback.
 3. **Wipe history** — fast-delete recent YouTube activity via Google My Activity.
-4. **Find in comments** — search all public comments/replies via the YouTube Data API.
+4. **Find in comments** — search all public comments/replies via the YouTube Data API (not built yet).
 
-Nah / Hate work by capturing YouTube's internal feedback endpoints from recommendation
-cards and replaying them — **never fabricated**. Buttons stay disabled until a real
-cached endpoint exists for that video/channel.
+The two feedback buttons work by capturing YouTube's internal feedback endpoints from
+recommendation cards and replaying them — **never fabricated**. They stay grayed (but still
+clickable, to explain why via a toast) until a real cached endpoint exists for that
+video/channel. **User-facing labels have changed over time** (Nah → Hate content → **Less like
+this**; Hate this channel → Hate channel → **Don't recommend channel**), but the **internal action
+ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
 
 ## Status
 
-- **Phase 0 — DONE:** Scaffold + dynamic CDP test harness. 4-button bar injects on watch
+- **Phase 0 — DONE:** Scaffold + dynamic CDP test harness. Button bar injects on watch
   pages. Verified end-to-end via `npm run drive`.
 - **Feature 1a — DONE (capture + availability, dry-run clicks):** The MAIN-world bridge reads the
   **live polymer element data** (`ytd-watch-flexy.data` / `ytd-browse.data` / `ytd-search.data`,
@@ -36,8 +39,8 @@ cached endpoint exists for that video/channel.
   entry) → ~0.8 KB/video. `captureFrom` only pushes new/changed tuples to the SW (per-tick dedup vs
   `videoIndex`). Clicking a video link triggers a **click-time capture** of that exact video
   (`CAPTURE_VIDEO` → bridge `videoIndex`, falling back to the live element data) so fast clicks still
-  cache the clicked video. On a watch page, Nah/Hate light up when a token is cached. **Clicks are
-  DRY-RUN — nothing is POSTed yet.** Measure with `node scripts/measure-feedback.mjs`.
+  cache the clicked video. On a watch page, the two feedback buttons light up when a token is
+  cached. **Clicks are DRY-RUN — nothing is POSTed yet.** Measure with `node scripts/measure-feedback.mjs`.
   - **Root-cause fix (2026-06-16): sidebar-clicked videos stayed gray.** `window.ytInitialData` is
     **frozen at the first full page load** — after an SPA navigation (clicking sidebar videos while
     watching) it never updates, *and* YouTube serves the new "watch next" data **with no `/next`
@@ -60,8 +63,10 @@ cached endpoint exists for that video/channel.
   `REPLAY` message handler; `window.__syfSubmitFeedback(token)` is the test hook
   (`scripts/validate-replay.mjs`).
   - **Undo caveat:** the "Not interested" response has NO undo token — only "Tell us why" reason
-    tokens. There is no clean programmatic undo for watch-page Nah (real Undo lives in the feed's
-    replacement card). Don't show a fake Undo; "Nah sent ✓" is the honest end state.
+    tokens. There is no clean programmatic undo for the watch-page action *from the response itself*
+    (real Undo lives in the feed's replacement card). Don't show a fake Undo; the toggled "✓" state
+    (e.g. "Less like this ✓") is the honest end state. (Toggle-undo still works — see Feature 1 — via
+    the `undoToken` captured from the card's `feedbackEndpoint`, not from the submit response.)
 - **Feature 1 — DONE (submit + toggle + log + native capture):**
   - Click submits real feedback; **click again undoes it** (toggle). Undo works because the card's
     `feedbackEndpoint` embeds `…undoFeedbackEndpoint.undoToken`; POSTing that reverses the action
@@ -74,14 +79,19 @@ cached endpoint exists for that video/channel.
   - Verified net-neutral via `scripts/{test-toggle-log,test-native,test-undo,validate-replay}.mjs`.
   - NOTE: bridge exposes `window.__syfDebug` (tokenIndex peek) for tests — gate/remove before any
     wider distribution (a page script could read a cached feedback token).
-- **UX:** grayed Hate-content/Hate-channel buttons stay clickable — clicking a grayed one shows a
-  toast explaining why it's unavailable (`showToast`). Bar buttons: **Hate content** · **Hate
-  channel** · **⏸ Pause history** · **Wipe history** · **Find in comments** · **ℹ Info**.
-  ("Nah"/"Hate this channel" were renamed to "Hate content"/"Hate channel"; internal action ids
-  stay `nah`/`hate-channel`.)
+- **UX:** grayed "Less like this"/"Don't recommend channel" buttons stay clickable — clicking a
+  grayed one shows a toast explaining why it's unavailable (`showToast`). Bar buttons: **Less like
+  this** · **Don't recommend channel** · **⏸ Pause history** · **Wipe history** · **Find in
+  comments** · **ℹ Info**. (See above for the label history; internal ids stay `nah`/`hate-channel`.)
+- **UX (bar layout, 2026-06-16):** the bar is a single **non-wrapping row** with **no brand label**
+  (the old "Seth's YouTube Fixer" text was removed). Buttons **auto-scale down to stay on one row**
+  as the watch column narrows: `.syf-bar` is a `container-type: inline-size` query container and
+  `.syf-btn` sizes its `font-size`/`padding` with `clamp(min, …cqi, max)` off the bar's width (caps
+  at the comfortable desktop size, shrinks toward the min on narrow columns). The product name now
+  appears only on the **ℹ Info** tooltip and inside the Info dialog (options page `<h1>` + footer).
 - **UX (2026-06-16):**
   - **⏸ Pause history / ▶ Resume history** — REAL inline toggle. Pausing/resuming watch history is
-    a `feedbackToken` on the same `/youtubei/v1/feedback` endpoint as Nah/Hate. The bridge extracts
+    a `feedbackToken` on the same `/youtubei/v1/feedback` endpoint as the two feedback buttons. The bridge extracts
     the pause/resume token + state from `/feed/history`'s `ytInitialData` (`readHistoryInfo` →
     `HISTORY_INFO`). Bar → `SYF_HISTORY` → SW opens `/feed/history` in a bg tab → `SYF_HISTORY_DO`
     submits via the bridge → caches `settings.lastHistoryPaused` (drives the button label). Safety:
@@ -104,8 +114,8 @@ cached endpoint exists for that video/channel.
   open, low-risk for personal single-account English use — revisit before any wider distribution:
   - The MAIN-world bridge still does the authenticated `/youtubei/v1/feedback` POST and accepts a
     `to-page` `REPLAY` `postMessage` whose guard fields are page-forgeable. A script already running
-    in the youtube.com MAIN world could trigger feedback writes (bounded to Nah/Hate/pause — not
-    account takeover). Proper fix: nonce-gate the channel, or move submission to the isolated world
+    in the youtube.com MAIN world could trigger feedback writes (bounded to the feedback actions /
+    history pause — not account takeover). Proper fix: nonce-gate the channel, or move submission to the isolated world
     (read SAPISID from `document.cookie` + `ytcfg` from the inline script).
   - History button label is driven by cached `lastHistoryPaused` (default = assume ON). The *action
     and toast are always correct* (the toggle reads live state from /feed/history first), but on a
@@ -160,8 +170,10 @@ test-wipe-ui, debug-ma, diag.
 - `src/content/youtube.ts` — isolated-world content script: SPA-nav detection, bar injection.
 - `src/content/page-bridge.ts` — MAIN-world script: reads ytInitialData/ytcfg, session feedback POSTs.
 - `src/content/styles.css` — bar styles.
-- `src/options/`, `src/popup/` — options page (API key, hide-shorts, TTL) and toolbar popup.
-- `src/wipe/`, `src/log/` — standalone Wipe-history and action-log pages (opened in new tabs).
+- `src/options/`, `src/popup/` — options page (API key, hide-shorts, TTL, **action log**, reset;
+  also opened in-page as the **ℹ Info** dialog) and toolbar popup.
+- `src/wipe/` — standalone Wipe-history page, opened in a new tab via `wipe.html?minutes=N`.
+  (The old standalone `src/log/` page was removed — the action log now lives in the options page.)
 - `src/common/messages.ts` — shared messages/types/settings.
 - `scripts/` — esbuild build + CDP harness (`chrome-lib`, `setup`, `drive`, `reload`, `diag`).
 - `test/` — Playwright (`fixtures.ts` attaches over CDP; `smoke.spec.ts`).

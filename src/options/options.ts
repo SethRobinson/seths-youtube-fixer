@@ -63,7 +63,7 @@ $<HTMLButtonElement>('reset').addEventListener('click', async () => {
 let log: ActionLogEntry[] = [];
 
 function rowHtml(e: ActionLogEntry, i: number): string {
-  const typeLabel = e.type === 'notInterested' ? 'Hate content (Not interested)' : 'Hate channel (Don’t recommend)';
+  const typeLabel = e.type === 'notInterested' ? 'Less like this (Not interested)' : 'Don’t recommend channel';
   const when = new Date(e.ts).toLocaleString();
   const title = e.title || e.channelName || e.videoId || '(unknown)';
   let btn = '';
@@ -80,7 +80,7 @@ async function renderLog(): Promise<void> {
   const res = (await chrome.runtime.sendMessage({ type: 'SYF_GET_LOG' } as SyfMessage)) as LogResult | undefined;
   log = res?.log ?? [];
   if (!log.length) {
-    logEl.innerHTML = `<div class="empty">No actions yet. Use Hate content / Hate channel on a video, or YouTube’s own “Not interested” / “Don’t recommend channel”.</div>`;
+    logEl.innerHTML = `<div class="empty">No actions yet. Use “Less like this” / “Don’t recommend channel” on a video, or YouTube’s own “Not interested” / “Don’t recommend channel”.</div>`;
     return;
   }
   logEl.innerHTML = log.map(rowHtml).join('');
