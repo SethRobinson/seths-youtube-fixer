@@ -7,14 +7,16 @@
     <style>
       body {
         font: 14px 'Roboto', Arial, sans-serif;
-        max-width: 640px;
+        max-width: 660px;
         margin: 24px auto;
-        padding: 0 16px;
+        padding: 0 16px 48px;
         color: #0f0f0f;
         background: #fff;
+        line-height: 1.5;
       }
-      h1 { font-size: 18px; }
-      label { display: block; margin: 16px 0 4px; font-weight: 600; }
+      h1 { font-size: 20px; }
+      h2 { font-size: 15px; margin: 28px 0 6px; }
+      label { display: block; margin: 14px 0 4px; font-weight: 600; }
       input[type='text'] {
         width: 100%;
         padding: 8px;
@@ -30,10 +32,24 @@
         border-radius: 8px;
         font: inherit;
       }
-      small { color: #666; }
+      .check { display: flex; align-items: flex-start; gap: 8px; margin: 14px 0; }
+      .check input { margin-top: 3px; }
+      .check label { margin: 0; }
+      small { color: #666; display: block; margin-top: 4px; }
+      a { color: #065fd4; }
+      .help {
+        background: #f4f7ff;
+        border: 1px solid #d6e0ff;
+        border-radius: 10px;
+        padding: 12px 16px;
+        margin: 8px 0 4px;
+        font-size: 13px;
+      }
+      .help ol { margin: 6px 0 0; padding-left: 20px; }
+      .help li { margin: 4px 0; }
       button {
-        margin-top: 16px;
-        padding: 8px 18px;
+        margin-top: 24px;
+        padding: 10px 20px;
         border: none;
         border-radius: 8px;
         background: #065fd4;
@@ -46,17 +62,32 @@
   </head>
   <body>
     <h1>Seth's YouTube Fixer</h1>
+
+    <h2>Comment search</h2>
     <label for="apiKey">YouTube Data API key</label>
     <input id="apiKey" type="text" placeholder="AIza…" autocomplete="off" spellcheck="false" />
-    <small>Used only for comment search. Stored locally; never synced or sent anywhere else.</small>
+    <small>Used only for “Find in comments”. Stored locally in this browser; never synced or sent anywhere except Google’s API.</small>
+    <div class="help">
+      <b>How to get a free API key (~3 min):</b>
+      <ol>
+        <li>Open the <a id="gcpLink" href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud Console</a> and create a project (or pick an existing one).</li>
+        <li>Go to <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">APIs &amp; Services → Library → YouTube Data API v3</a> and click <b>Enable</b>.</li>
+        <li>Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credentials → Create credentials → API key</a>, then copy the key here.</li>
+        <li>(Optional) Click <b>Restrict key</b> → restrict it to the YouTube Data API v3.</li>
+      </ol>
+      <small>The key is yours and tied to your own Google quota (10,000 units/day — plenty for personal use). A key can’t be obtained automatically; it has to be created in your Google account.</small>
+    </div>
 
+    <h2>Feed</h2>
+    <div class="check">
+      <input id="hideShorts" type="checkbox" />
+      <label for="hideShorts">Hide Shorts from recommendations<small>Hides Shorts shelves and cards from Home, Search, Subscriptions, and the sidebar. Toggling takes effect immediately.</small></label>
+    </div>
+
+    <h2>Feedback cache</h2>
     <label for="ttlDays">Cached feedback expires after (days)</label>
     <input id="ttlDays" type="number" min="0.1" max="365" step="0.5" />
-    <small>
-      How long a captured “Hate content / channel” token stays usable before it’s ignored.
-      The real server-side limit is unknown — lower this if old tokens start getting rejected.
-      Cache lives in this browser only and survives tab switches and restarts.
-    </small>
+    <small>How long a captured “Hate content / channel” token stays usable before it’s ignored. The real server-side limit is unknown — lower this if old tokens start getting rejected. Cache lives in this browser only and survives tab switches and restarts.</small>
 
     <div>
       <button id="save">Save</button>

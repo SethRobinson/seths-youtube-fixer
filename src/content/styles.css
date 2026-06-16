@@ -205,6 +205,23 @@
   transform: translateX(-50%) translateY(0);
 }
 
+/* --- hide Shorts (toggled via html.syf-hide-shorts) --- */
+html.syf-hide-shorts ytd-rich-shelf-renderer[is-shorts],
+html.syf-hide-shorts ytd-reel-shelf-renderer,
+html.syf-hide-shorts ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]),
+html.syf-hide-shorts grid-shelf-view-model,
+html.syf-hide-shorts ytm-shorts-lockup-view-model,
+html.syf-hide-shorts ytm-shorts-lockup-view-model-v2,
+html.syf-hide-shorts ytd-rich-item-renderer:has(ytm-shorts-lockup-view-model),
+html.syf-hide-shorts ytd-rich-item-renderer:has(a[href^='/shorts/']),
+html.syf-hide-shorts ytd-video-renderer:has(a[href^='/shorts/']),
+html.syf-hide-shorts ytd-compact-video-renderer:has(a[href^='/shorts/']),
+html.syf-hide-shorts ytd-guide-entry-renderer:has(a[title='Shorts']),
+html.syf-hide-shorts ytd-mini-guide-entry-renderer:has(a[title='Shorts']),
+html.syf-hide-shorts ytd-pivot-bar-item-renderer:has([tab-title='Shorts']) {
+  display: none !important;
+}
+
 /* --- wipe dialog --- */
 .syf-wipe-body {
   padding: 14px 16px;

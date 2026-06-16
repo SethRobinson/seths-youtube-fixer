@@ -27,7 +27,11 @@ export type SyfMessage =
   | { type: 'SYF_GET_LOG' }
   | { type: 'SYF_WIPE'; mode: 'scan' | 'delete'; startMs: number; endMs: number }
   | { type: 'SYF_MA_SCAN'; startMs: number; endMs: number }
-  | { type: 'SYF_MA_DELETE'; startMs: number; endMs: number };
+  | { type: 'SYF_MA_DELETE'; startMs: number; endMs: number }
+  | { type: 'SYF_OPEN_OPTIONS' }
+  | { type: 'SYF_OPEN_PAGE'; page: 'wipe' | 'log' }
+  | { type: 'SYF_RELAY_REPLAY'; token: string }
+  | { type: 'SYF_DO_REPLAY'; token: string };
 
 export interface WipeItem {
   title: string;
@@ -78,6 +82,7 @@ export interface SyfSettings {
   wipePresetsMin?: number[];
   confirmBeforeWipe?: boolean;
   feedbackTtlDays?: number; // how long a cached feedback token is considered usable
+  hideShorts?: boolean; // hide Shorts shelves/cards from feeds
 }
 
 export const DEFAULT_SETTINGS: SyfSettings = {
@@ -85,4 +90,5 @@ export const DEFAULT_SETTINGS: SyfSettings = {
   wipePresetsMin: [15, 30, 60, 120],
   confirmBeforeWipe: true,
   feedbackTtlDays: 7,
+  hideShorts: false,
 };

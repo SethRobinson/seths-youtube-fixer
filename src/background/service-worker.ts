@@ -139,6 +139,19 @@ async function handleWipe(mode: 'scan' | 'delete', startMs: number, endMs: numbe
   }
 }
 
+// Submit a feedback token by relaying to an open YouTube tab's bridge (used by
+// the standalone log page, which has no page session of its own).
+async function relayReplay(token: string): Promise<any> {
+  const tabs = await chrome.tabs.query({ url: ['https://www.youtube.com/*'] });
+  const tab = tabs.find((t) => t.id);
+  if (!tab?.id) return { ok: false, error: 'no-youtube-tab' };
+  try {
+    return await chrome.tabs.sendMessage(tab.id, { type: 'SYF_DO_REPLAY', token } as SyfMessage);
+  } catch {
+    return { ok: false, error: 'relay-failed' };
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) => {
   switch (msg?.type) {
     case 'SYF_PING':
@@ -229,6 +242,20 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
 
     case 'SYF_WIPE':
       handleWipe(msg.mode, msg.startMs, msg.endMs).then(sendResponse);
+      return true;
+
+    case 'SYF_OPEN_OPTIONS':
+      chrome.runtime.openOptionsPage();
+      sendResponse({ ok: true });
+      return false;
+
+    case 'SYF_OPEN_PAGE':
+      chrome.tabs.create({ url: chrome.runtime.getURL(msg.page === 'wipe' ? 'wipe/wipe.html' : 'log/log.html') });
+      sendResponse({ ok: true });
+      return false;
+
+    case 'SYF_RELAY_REPLAY':
+      relayReplay(msg.token).then(sendResponse);
       return true;
 
     case 'SYF_STATS':

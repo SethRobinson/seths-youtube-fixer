@@ -1,7 +1,14 @@
 // Isolated-world content script: injects the button bar, forwards captures to the
 // service worker, reflects availability, submits/undoes feedback (toggle), logs
 // every action (incl. native YouTube actions), and shows an action-log panel.
-import type { SyfMessage, LookupResult, LogResult } from '../common/messages';
+import {
+  SETTINGS_KEY,
+  DEFAULT_SETTINGS,
+  type SyfMessage,
+  type LookupResult,
+  type LogResult,
+  type SyfSettings,
+} from '../common/messages';
 import type { ActionLogEntry } from '../common/feedback';
 
 const TAG = '[SYF]';
@@ -48,6 +55,18 @@ interface ActionState {
 const buttons: Record<string, HTMLButtonElement> = {};
 const state: Record<string, ActionState> = { nah: {}, 'hate-channel': {} };
 let current: { videoId?: string; channelId?: string; channelName?: string; title?: string } = {};
+let settings: SyfSettings = { ...DEFAULT_SETTINGS };
+
+function applySettings(s: SyfSettings): void {
+  settings = s;
+  document.documentElement.classList.toggle('syf-hide-shorts', !!s.hideShorts);
+}
+chrome.storage.local.get(SETTINGS_KEY).then((o) => applySettings({ ...DEFAULT_SETTINGS, ...(o[SETTINGS_KEY] ?? {}) }));
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes[SETTINGS_KEY]) {
+    applySettings({ ...DEFAULT_SETTINGS, ...(changes[SETTINGS_KEY].newValue ?? {}) });
+  }
+});
 
 function getVideoId(): string | null {
   const u = new URL(location.href);
@@ -186,7 +205,12 @@ function onClick(action: string): void {
     return;
   }
   if (action === 'find-comments') {
-    showToast('Comment search isn’t built yet — coming soon.');
+    if (!settings.apiKey) {
+      showToast('A YouTube Data API key is needed to search comments — opening settings…');
+      chrome.runtime?.sendMessage?.({ type: 'SYF_OPEN_OPTIONS' } as SyfMessage).catch(() => {});
+    } else {
+      showToast('Comment search is coming soon (your API key is set).');
+    }
     return;
   }
   console.log(TAG, 'click:', action, '(not wired yet)');
@@ -512,6 +536,15 @@ window.addEventListener('message', (e: MessageEvent) => {
       break;
     }
   }
+});
+
+// Relayed feedback submission from the standalone log page (via the SW).
+chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) => {
+  if (msg?.type === 'SYF_DO_REPLAY') {
+    replay(msg.token, 'apply').then((result) => sendResponse(result));
+    return true; // async
+  }
+  return false;
 });
 
 // --- SPA-aware scheduling ---
