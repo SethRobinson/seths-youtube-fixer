@@ -25,17 +25,28 @@ cached endpoint exists for that video/channel.
 
 - **Phase 0 — DONE:** Scaffold + dynamic CDP test harness. 4-button bar injects on watch
   pages. Verified end-to-end via `npm run drive`.
-- **Feature 1a — DONE (capture + availability, dry-run clicks):** The MAIN-world bridge
-  parses `ytInitialData` + hooks `/youtubei/v1/{browse,next,search}` responses to capture
-  "Not interested" (`feedbackToken`, icon HIDE) and "Don't recommend channel" (icon REMOVE)
-  tokens, keyed by video/channel in the SW cache (`syf.feedback`, 7-day TTL; `unlimitedStorage` +
-  LRU-capped at 2000 videos/2000 channels so it can't hit the 10 MB quota and silently drop
-  captures). The SW keeps cache/log/settings **in memory** (no re-parse per lookup; invalidated on
-  reset). The DR token is stored channel-level only (not duplicated in the video entry) → ~0.8 KB/
-  video. Clicking a video link triggers a **click-time capture** of that exact video
-  (`CAPTURE_VIDEO` → bridge `videoIndex`) so fast clicks still cache the clicked video. On a watch
-  page, Nah/Hate light up when a token is cached. **Clicks are DRY-RUN — nothing is POSTed
-  yet.** Measure with `node scripts/measure-feedback.mjs`.
+- **Feature 1a — DONE (capture + availability, dry-run clicks):** The MAIN-world bridge reads the
+  **live polymer element data** (`ytd-watch-flexy.data` / `ytd-browse.data` / `ytd-search.data`,
+  scoped by `location.pathname`) + hooks `/youtubei/v1/{browse,next,search}` responses (scroll
+  continuations) to capture "Not interested" (`feedbackToken`, icon HIDE) and "Don't recommend
+  channel" (icon REMOVE) tokens, keyed by video/channel in the SW cache (`syf.feedback`, 7-day TTL;
+  `unlimitedStorage` + LRU-capped at 2000 videos/2000 channels so it can't hit the 10 MB quota and
+  silently drop captures). The SW keeps cache/log/settings **in memory** (no re-parse per lookup;
+  invalidated on reset). The DR token is stored channel-level only (not duplicated in the video
+  entry) → ~0.8 KB/video. `captureFrom` only pushes new/changed tuples to the SW (per-tick dedup vs
+  `videoIndex`). Clicking a video link triggers a **click-time capture** of that exact video
+  (`CAPTURE_VIDEO` → bridge `videoIndex`, falling back to the live element data) so fast clicks still
+  cache the clicked video. On a watch page, Nah/Hate light up when a token is cached. **Clicks are
+  DRY-RUN — nothing is POSTed yet.** Measure with `node scripts/measure-feedback.mjs`.
+  - **Root-cause fix (2026-06-16): sidebar-clicked videos stayed gray.** `window.ytInitialData` is
+    **frozen at the first full page load** — after an SPA navigation (clicking sidebar videos while
+    watching) it never updates, *and* YouTube serves the new "watch next" data **with no `/next`
+    request** we can hook (prefetched). So the old `captureFrom(ytInitialData)` tick only ever
+    captured the *original* page's sidebar; every video that rotated in after the first hop was never
+    cached. Reproduced at 3/5 hops, fixed to 15/15 by reading `ytd-watch-flexy.data` (the SPA-fresh
+    source) instead. Regression tests: `scripts/test-hops-real.mjs` (multi-hop real-card clicks),
+    `scripts/test-spa-data.mjs` (proves the staleness), `scripts/test-flexy-data.mjs` (proves the
+    live source).
   - Coverage (fixed 2026-06-16): the extractor now handles BOTH classic (`videoId`+`menu`) and the
     new `lockupViewModel` cards (`contentId` + `rendererContext.commandContext.onTap.innertubeCommand
     .feedbackEndpoint`). Tokens are inline in the feed — no need to open menus (confirmed all 70 home

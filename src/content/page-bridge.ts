@@ -211,26 +211,69 @@ function indexTuple(t: any): void {
     undoIndex.set(t.dontRecommendChannelUndoToken, { type: 'dontRecommendChannel', videoId: t.videoId, channelId: t.channelId });
 }
 
+// window.ytInitialData is FROZEN at the first full page load. After an SPA
+// navigation (e.g. clicking sidebar videos while watching) it is never updated,
+// and YouTube serves the new "watch next" data WITHOUT a /next request we can
+// hook — the live page state lives on the polymer elements instead. So read the
+// element data: ytd-watch-flexy.data (watch), ytd-browse.data (home/feeds),
+// ytd-search.data (results). This is the root-cause fix for "Hate content stays
+// gray on sidebar-clicked videos" — every video that rotated into the sidebar
+// after the first SPA nav was previously never captured.
+function liveRoots(): any[] {
+  const roots: any[] = [];
+  const add = (sel: string) => {
+    const d = (document.querySelector(sel) as any)?.data;
+    if (d) roots.push(d);
+  };
+  // Read only the container for the current page type (avoids walking a hidden,
+  // stale ytd-browse left over from a previous SPA view).
+  const path = location.pathname;
+  if (path === '/watch') add('ytd-watch-flexy');
+  else if (path === '/results') add('ytd-search');
+  else add('ytd-browse'); // home, /feed/*, channel pages, etc.
+  // Fall back to ytInitialData only before the polymer element has hydrated
+  // (very first paint of a full load).
+  if (!roots.length && (window as any).ytInitialData) roots.push((window as any).ytInitialData);
+  return roots;
+}
+
 function captureFrom(root: any): void {
   try {
     const items = extractTuples(root);
-    for (const t of items) indexTuple(t);
-    if (items.length) post('CAPTURE', { items });
+    const fresh: any[] = [];
+    for (const t of items) {
+      const prev = videoIndex.get(t.videoId);
+      // Only push to the SW when the video is new or its token changed — avoids
+      // re-sending the whole sidebar on every 700ms tick / every navigation.
+      if (
+        !prev ||
+        prev.notInterestedToken !== t.notInterestedToken ||
+        prev.dontRecommendChannelToken !== t.dontRecommendChannelToken
+      ) {
+        fresh.push(t);
+      }
+      indexTuple(t);
+    }
+    if (fresh.length) post('CAPTURE', { items: fresh });
   } catch {
     /* noop */
   }
 }
 
 // Capture one specific video on demand (the user just clicked it) so its data is
-// guaranteed in the cache before navigation, even under fast clicking.
+// guaranteed in the cache before navigation, even under fast clicking. Reads the
+// LIVE element data (not stale ytInitialData) so it works after SPA navigation.
 function captureVideo(videoId: string): void {
   try {
     let t = videoIndex.get(videoId);
     if (!t) {
-      const found = extractTuples((window as any).ytInitialData || {}).find((x: any) => x.videoId === videoId);
-      if (found) {
-        indexTuple(found);
-        t = found;
+      for (const root of liveRoots()) {
+        const found = extractTuples(root).find((x: any) => x.videoId === videoId);
+        if (found) {
+          indexTuple(found);
+          t = found;
+          break;
+        }
       }
     }
     if (t) post('CAPTURE', { items: [t] });
@@ -395,7 +438,9 @@ function readWatchContext(): void {
 function readHistoryInfo(): void {
   if (!/\/feed\/history/.test(location.pathname)) return;
   try {
-    const data = (window as any).ytInitialData;
+    // ytd-browse.data is the live (SPA-fresh) source; ytInitialData is only
+    // correct on a full load and goes stale after navigation.
+    const data = (document.querySelector('ytd-browse') as any)?.data || (window as any).ytInitialData;
     if (!data) return;
     let token: string | null = null;
     let paused: boolean | null = null;
@@ -430,7 +475,7 @@ function readHistoryInfo(): void {
 function onNavigate(): void {
   let tries = 0;
   const tick = () => {
-    if ((window as any).ytInitialData) captureFrom((window as any).ytInitialData);
+    for (const root of liveRoots()) captureFrom(root);
     readWatchContext();
     readHistoryInfo();
   };
