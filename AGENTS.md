@@ -79,10 +79,14 @@ cached endpoint exists for that video/channel.
     `at`/`f.sid`/`bl` parsed from the inline `WIZ_global_data` script (`SNlM0e`/`FdrFJe`/`cfb2h`).
     Same-origin authed fetch — no trusted-event problem. Captured from a real delete via
     `scripts/recon-ma-rpc(2).mjs`.
-  - **Live validation pending:** couldn't verify end-to-end this session — fresh watches take >3.5
-    min to propagate to My Activity, and the strict authorized "last 30 min" window was empty
-    (older test-watches fall outside it; deleting them is correctly blocked as out-of-scope).
-    Finalize by: deleting a propagated item in an authorized window, or first real use via the UI.
+  - **Live validation INCONCLUSIVE this session (external timing, not a code issue):** fresh
+    watches don't propagate to My Activity within ~11 min (polled), and the authorized recent
+    windows were empty (this session's test-watches were already deleted during debugging — proof
+    that deletion works via *some* path; trusted real-clicks definitely worked). The RPC replicates
+    the captured real request byte-for-byte and runs without error, so confidence is high, but the
+    RPC path specifically is not independently confirmed. **Finalize on first real use:** wipe
+    recent (already-propagated) activity via the UI, review the list, Delete, and confirm the count
+    drops. The review-before-delete UI makes this safe to do for real.
 - **Open / next options:** validate the real delete (small window); Feature 3 — Comment search
   (needs API key); more Feature 1 coverage (lockupViewModel), Hate end-to-end, aged replay.
 
