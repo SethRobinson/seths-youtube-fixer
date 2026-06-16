@@ -6,14 +6,11 @@ import {
   DEFAULT_SETTINGS,
   type SyfMessage,
   type LookupResult,
-  type LogResult,
   type SyfSettings,
 } from '../common/messages';
-import type { ActionLogEntry } from '../common/feedback';
 
 const TAG = '[SYF]';
 const BAR_ID = 'syf-bar';
-const MODAL_ID = 'syf-modal';
 
 const NAH_TIP = 'Send YouTube’s real “Not interested” for this video.';
 const HATE_TIP = 'Send YouTube’s real “Don’t recommend channel” for this creator.';
@@ -37,6 +34,7 @@ interface BtnDef {
 const BUTTONS: BtnDef[] = [
   { action: 'nah', label: 'Hate content', tip: NAH_UNAVAIL },
   { action: 'hate-channel', label: 'Hate channel', tip: HATE_UNAVAIL },
+  { action: 'pause-history', label: '⏸ Pause history', tip: 'Open YouTube’s watch-history settings to pause or resume recording.' },
   { action: 'wipe', label: 'Wipe history', tip: 'Delete recent YouTube activity via My Activity.' },
   { action: 'find-comments', label: 'Find in comments', tip: 'Search all public comments and replies.' },
   { action: 'info', label: 'ℹ Info', tip: 'View and undo your feedback actions.' },
@@ -71,13 +69,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
 function getVideoId(): string | null {
   const u = new URL(location.href);
   return u.pathname === '/watch' ? u.searchParams.get('v') : null;
-}
-
-function escapeHtml(s: unknown): string {
-  return String(s ?? '').replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!
-  );
 }
 
 function showToast(message: string): void {
@@ -204,6 +195,10 @@ function onClick(action: string): void {
     chrome.runtime?.sendMessage?.({ type: 'SYF_OPEN_PAGE', page: 'wipe' } as SyfMessage).catch(() => {});
     return;
   }
+  if (action === 'pause-history') {
+    chrome.runtime?.sendMessage?.({ type: 'SYF_OPEN_PAGE', page: 'history' } as SyfMessage).catch(() => {});
+    return;
+  }
   if (action === 'find-comments') {
     if (!settings.apiKey) {
       showToast('A YouTube Data API key is needed to search comments — opening settings…');
@@ -233,7 +228,7 @@ function buildBar(): HTMLElement {
     btn.textContent = def.label;
     btn.title = def.tip;
     btn.disabled = false; // clickable; availability is conveyed via data-state
-    btn.dataset.state = def.action === 'info' || def.action === 'wipe' ? 'ready' : 'disabled';
+    btn.dataset.state = ['info', 'wipe', 'pause-history'].includes(def.action) ? 'ready' : 'disabled';
     btn.addEventListener('click', () => onClick(def.action));
     bar.appendChild(btn);
     buttons[def.action] = btn;

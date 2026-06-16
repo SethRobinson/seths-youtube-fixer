@@ -249,10 +249,15 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
       sendResponse({ ok: true });
       return false;
 
-    case 'SYF_OPEN_PAGE':
-      chrome.tabs.create({ url: chrome.runtime.getURL(msg.page === 'wipe' ? 'wipe/wipe.html' : 'log/log.html') });
+    case 'SYF_OPEN_PAGE': {
+      const url =
+        msg.page === 'history'
+          ? 'https://www.youtube.com/feed/history'
+          : chrome.runtime.getURL(msg.page === 'wipe' ? 'wipe/wipe.html' : 'log/log.html');
+      chrome.tabs.create({ url });
       sendResponse({ ok: true });
       return false;
+    }
 
     case 'SYF_RELAY_REPLAY':
       relayReplay(msg.token).then(sendResponse);
