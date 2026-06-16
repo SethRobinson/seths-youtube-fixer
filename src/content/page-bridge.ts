@@ -25,22 +25,41 @@ function textOf(t: any): string | undefined {
   return undefined;
 }
 
+// The undo token lives under feedbackEndpoint.actions[]…undoFeedbackEndpoint.undoToken.
+function findUndoToken(node: any, d = 0): string | undefined {
+  if (!node || typeof node !== 'object' || d > 15) return undefined;
+  if (typeof node.undoToken === 'string') return node.undoToken;
+  for (const k of Object.keys(node)) {
+    const r = findUndoToken(node[k], d + 1);
+    if (r) return r;
+  }
+  return undefined;
+}
+
 function classifyMenu(menu: any): {
   notInterestedToken?: string;
+  notInterestedUndoToken?: string;
   dontRecommendChannelToken?: string;
+  dontRecommendChannelUndoToken?: string;
 } {
-  const res: { notInterestedToken?: string; dontRecommendChannelToken?: string } = {};
+  const res: ReturnType<typeof classifyMenu> = {};
   const items = menu?.menuRenderer?.items;
   if (!Array.isArray(items)) return res;
   for (const it of items) {
     const mi = it.menuServiceItemRenderer;
-    const token = mi?.serviceEndpoint?.feedbackEndpoint?.feedbackToken;
+    const fe = mi?.serviceEndpoint?.feedbackEndpoint;
+    const token = fe?.feedbackToken;
     if (!token) continue;
+    const undo = findUndoToken(fe);
     const icon = mi.icon?.iconType;
     const label = (textOf(mi.text) || '').toLowerCase();
-    if (icon === 'HIDE' || label.includes('not interested')) res.notInterestedToken = token;
-    else if (icon === 'REMOVE' || label.includes("don't recommend") || label.includes('dont recommend'))
+    if (icon === 'HIDE' || label.includes('not interested')) {
+      res.notInterestedToken = token;
+      res.notInterestedUndoToken = undo;
+    } else if (icon === 'REMOVE' || label.includes("don't recommend") || label.includes('dont recommend')) {
       res.dontRecommendChannelToken = token;
+      res.dontRecommendChannelUndoToken = undo;
+    }
   }
   return res;
 }
@@ -79,16 +98,18 @@ function extractTuples(root: any): any[] {
       return;
     }
     if (typeof o.videoId === 'string' && o.videoId.length === 11 && o.menu) {
-      const { notInterestedToken, dontRecommendChannelToken } = classifyMenu(o.menu);
-      if (notInterestedToken || dontRecommendChannelToken) {
+      const c = classifyMenu(o.menu);
+      if (c.notInterestedToken || c.dontRecommendChannelToken) {
         const { channelName, channelId } = bylineChannel(o);
         out.push({
           videoId: o.videoId,
           channelId,
           channelName,
           title: textOf(o.title),
-          notInterestedToken,
-          dontRecommendChannelToken,
+          notInterestedToken: c.notInterestedToken,
+          notInterestedUndoToken: c.notInterestedUndoToken,
+          dontRecommendChannelToken: c.dontRecommendChannelToken,
+          dontRecommendChannelUndoToken: c.dontRecommendChannelUndoToken,
           sourcePage: location.pathname,
         });
       }
@@ -98,9 +119,41 @@ function extractTuples(root: any): any[] {
   return out;
 }
 
+// Index captured tokens so we can identify NATIVE feedback the user triggers
+// via YouTube's own menus (and offer the same logging/undo).
+const tokenIndex = new Map<string, any>();
+const undoIndex = new Map<string, any>();
+function indexTuple(t: any): void {
+  if (t.notInterestedToken)
+    tokenIndex.set(t.notInterestedToken, {
+      type: 'notInterested',
+      videoId: t.videoId,
+      channelId: t.channelId,
+      title: t.title,
+      channelName: t.channelName,
+      actionToken: t.notInterestedToken,
+      undoToken: t.notInterestedUndoToken,
+    });
+  if (t.notInterestedUndoToken)
+    undoIndex.set(t.notInterestedUndoToken, { type: 'notInterested', videoId: t.videoId, channelId: t.channelId });
+  if (t.dontRecommendChannelToken)
+    tokenIndex.set(t.dontRecommendChannelToken, {
+      type: 'dontRecommendChannel',
+      videoId: t.videoId,
+      channelId: t.channelId,
+      title: t.title,
+      channelName: t.channelName,
+      actionToken: t.dontRecommendChannelToken,
+      undoToken: t.dontRecommendChannelUndoToken,
+    });
+  if (t.dontRecommendChannelUndoToken)
+    undoIndex.set(t.dontRecommendChannelUndoToken, { type: 'dontRecommendChannel', videoId: t.videoId, channelId: t.channelId });
+}
+
 function captureFrom(root: any): void {
   try {
     const items = extractTuples(root);
+    for (const t of items) indexTuple(t);
     if (items.length) post('CAPTURE', { items });
   } catch {
     /* noop */
@@ -108,8 +161,36 @@ function captureFrom(root: any): void {
 }
 
 // --- hook fetch to catch infinite-scroll / up-next / search continuations ---
+// Detect native feedback the user submits through YouTube's own UI. Our own
+// submissions go through origFetch (below), so they are NOT seen here.
+function inspectNativeFeedback(init: any): void {
+  try {
+    const bodyStr = typeof init?.body === 'string' ? init.body : null;
+    if (!bodyStr) return;
+    const tokens = JSON.parse(bodyStr)?.feedbackTokens || [];
+    for (const t of tokens) {
+      const info = tokenIndex.get(t);
+      if (info) {
+        post('NATIVE_ACTION', { info });
+        continue;
+      }
+      const undoInfo = undoIndex.get(t);
+      if (undoInfo) post('NATIVE_UNDO', { info: undoInfo });
+    }
+  } catch {
+    /* noop */
+  }
+}
+
 const origFetch = window.fetch;
 window.fetch = function (this: unknown, ...args: any[]) {
+  try {
+    const input = args[0];
+    const url = typeof input === 'string' ? input : input?.url;
+    if (url && /\/youtubei\/v1\/feedback/.test(url)) inspectNativeFeedback(args[1]);
+  } catch {
+    /* noop */
+  }
   const p = origFetch.apply(this, args as any);
   try {
     const input = args[0];
@@ -186,6 +267,11 @@ async function submitFeedback(token: string): Promise<any> {
 
 // Exposed for controlled validation from the test harness.
 (window as any).__syfSubmitFeedback = submitFeedback;
+(window as any).__syfDebug = {
+  size: () => tokenIndex.size,
+  firstToken: () => tokenIndex.keys().next().value,
+  hasToken: (t: string) => tokenIndex.has(t),
+};
 
 // Real submission requested by the isolated content script (button UI path).
 window.addEventListener('message', (e: MessageEvent) => {
@@ -193,7 +279,7 @@ window.addEventListener('message', (e: MessageEvent) => {
   const d: any = e.data;
   if (!d || d.__syf !== true || d.dir !== 'to-page' || d.type !== 'REPLAY') return;
   submitFeedback(d.token).then((result) =>
-    post('REPLAY_RESULT', { action: d.action, requestId: d.requestId, result })
+    post('REPLAY_RESULT', { action: d.action, mode: d.mode, requestId: d.requestId, result })
   );
 });
 

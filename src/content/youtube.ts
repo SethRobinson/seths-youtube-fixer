@@ -1,11 +1,15 @@
-// Isolated-world content script: injects the button bar, forwards captures from
-// the MAIN-world bridge to the service worker, reflects feedback availability,
-// and submits real feedback (via the bridge) on click.
-import type { SyfMessage, LookupResult } from '../common/messages';
+// Isolated-world content script: injects the button bar, forwards captures to the
+// service worker, reflects availability, submits/undoes feedback (toggle), logs
+// every action (incl. native YouTube actions), and shows an action-log panel.
+import type { SyfMessage, LookupResult, LogResult } from '../common/messages';
+import type { ActionLogEntry } from '../common/feedback';
 
 const TAG = '[SYF]';
 const BAR_ID = 'syf-bar';
+const MODAL_ID = 'syf-modal';
 
+const NAH_TIP = 'Send YouTube’s real “Not interested” for this video.';
+const HATE_TIP = 'Send YouTube’s real “Don’t recommend channel” for this creator.';
 const NAH_UNAVAIL =
   'Not available yet — this video hasn’t been seen as a recommendation card with YouTube’s real feedback action.';
 const HATE_UNAVAIL =
@@ -20,72 +24,137 @@ interface BtnDef {
 const BUTTONS: BtnDef[] = [
   { action: 'nah', label: 'Nah', tip: NAH_UNAVAIL },
   { action: 'hate-channel', label: 'Hate this channel', tip: HATE_UNAVAIL },
-  { action: 'wipe', label: 'Wipe history', tip: 'Delete recent YouTube activity from your Google account via My Activity.' },
-  { action: 'find-comments', label: 'Find in comments', tip: 'Search all public comments and replies on this video.' },
+  { action: 'wipe', label: 'Wipe history', tip: 'Delete recent YouTube activity via My Activity.' },
+  { action: 'find-comments', label: 'Find in comments', tip: 'Search all public comments and replies.' },
+  { action: 'info', label: 'ℹ Info', tip: 'View and undo your feedback actions.' },
 ];
 
 const LABELS: Record<string, string> = { nah: 'Nah', 'hate-channel': 'Hate this channel' };
-const SENT_LABELS: Record<string, string> = { nah: 'Nah sent ✓', 'hate-channel': 'Channel hidden ✓' };
+const SENT_LABELS: Record<string, string> = { nah: 'Nah ✓', 'hate-channel': 'Channel hidden ✓' };
+
+interface ActionState {
+  token?: string;
+  undoToken?: string;
+  activeId?: string;
+  activeUndoToken?: string;
+}
 
 const buttons: Record<string, HTMLButtonElement> = {};
+const state: Record<string, ActionState> = { nah: {}, 'hate-channel': {} };
 let current: { videoId?: string; channelId?: string; channelName?: string; title?: string } = {};
-let tokens: { nah?: string; hate?: string } = {};
-const sentFor: { nah?: string; hate?: string } = {}; // action -> videoId already submitted
 
 function getVideoId(): string | null {
   const u = new URL(location.href);
   return u.pathname === '/watch' ? u.searchParams.get('v') : null;
 }
 
-function setEnabled(btn: HTMLButtonElement, tip: string): void {
-  btn.disabled = false;
-  btn.dataset.state = 'ready';
-  btn.title = tip;
-}
-function setDisabled(btn: HTMLButtonElement, tip: string): void {
-  btn.disabled = true;
-  btn.dataset.state = 'disabled';
-  btn.title = tip;
+function escapeHtml(s: unknown): string {
+  return String(s ?? '').replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!
+  );
 }
 
-function submit(action: 'nah' | 'hate-channel'): void {
-  const token = action === 'nah' ? tokens.nah : tokens.hate;
-  const btn = buttons[action];
-  if (!token || !btn) return;
-  btn.disabled = true;
-  btn.dataset.state = 'loading';
-  btn.textContent = 'Sending…';
-  window.postMessage({ __syf: true, dir: 'to-page', type: 'REPLAY', action, token }, location.origin);
-}
-
-function onReplayResult(action: string, result: any): void {
-  const btn = buttons[action];
-  if (!btn) return;
-  const processed = result?.json?.feedbackResponses?.[0]?.isProcessed;
-  const ok = !!(result?.ok && (processed ?? true));
-  if (ok) {
-    btn.dataset.state = 'sent';
-    btn.textContent = SENT_LABELS[action] ?? '✓';
-    btn.disabled = true;
-    btn.title = 'Submitted to YouTube.';
-    if (current.videoId) sentFor[action === 'nah' ? 'nah' : 'hate'] = current.videoId;
-    console.log(TAG, action, 'submitted (isProcessed:', processed, ')');
-  } else {
-    btn.dataset.state = 'error';
-    btn.textContent = action === 'nah' ? 'Nah failed' : 'Failed';
-    btn.title = `Cached token rejected (status ${result?.status ?? '?'}). Browse to recapture a fresh one.`;
-    console.warn(TAG, action, 'failed', result);
+// --- promise-based replay through the MAIN-world bridge ---
+const pending = new Map<string, (r: any) => void>();
+function replay(token: string, mode: 'apply' | 'undo'): Promise<any> {
+  return new Promise((resolve) => {
+    const requestId = crypto.randomUUID?.() ?? String(Math.random());
+    pending.set(requestId, resolve);
+    window.postMessage({ __syf: true, dir: 'to-page', type: 'REPLAY', token, mode, requestId }, location.origin);
     setTimeout(() => {
-      btn.dataset.state = 'ready';
-      btn.disabled = false;
-      btn.textContent = LABELS[action];
-    }, 3500);
+      if (pending.has(requestId)) {
+        pending.delete(requestId);
+        resolve({ ok: false, error: 'timeout' });
+      }
+    }, 12000);
+  });
+}
+function replayOk(res: any): boolean {
+  return !!(res?.ok && (res?.json?.feedbackResponses?.[0]?.isProcessed ?? true));
+}
+
+// --- button rendering ---
+function renderButton(action: 'nah' | 'hate-channel'): void {
+  const btn = buttons[action];
+  const s = state[action];
+  if (!btn) return;
+  if (s.activeId) {
+    btn.disabled = false;
+    btn.dataset.state = 'sent';
+    btn.textContent = SENT_LABELS[action];
+    btn.title = 'Click to undo.';
+  } else if (s.token) {
+    btn.disabled = false;
+    btn.dataset.state = 'ready';
+    btn.textContent = LABELS[action];
+    btn.title = action === 'nah' ? NAH_TIP : HATE_TIP;
+  } else {
+    btn.disabled = true;
+    btn.dataset.state = 'disabled';
+    btn.textContent = LABELS[action];
+    btn.title = action === 'nah' ? NAH_UNAVAIL : HATE_UNAVAIL;
+  }
+}
+
+function showError(action: 'nah' | 'hate-channel', status?: number): void {
+  const btn = buttons[action];
+  btn.dataset.state = 'error';
+  btn.textContent = 'Failed';
+  btn.title = `Token rejected (status ${status ?? '?'}). Browse to recapture a fresh one.`;
+  setTimeout(() => renderButton(action), 3500);
+}
+
+async function onToggle(action: 'nah' | 'hate-channel'): Promise<void> {
+  const s = state[action];
+  const btn = buttons[action];
+  if (s.activeId) {
+    // toggle OFF (undo)
+    if (!s.activeUndoToken) return;
+    btn.disabled = true;
+    btn.dataset.state = 'loading';
+    btn.textContent = 'Undoing…';
+    const res = await replay(s.activeUndoToken, 'undo');
+    if (replayOk(res)) {
+      await chrome.runtime.sendMessage({ type: 'SYF_MARK_UNDONE', id: s.activeId } as SyfMessage);
+      console.log(TAG, action, 'undone');
+    }
+    await refreshAvailability();
+  } else if (s.token) {
+    // toggle ON (apply)
+    btn.disabled = true;
+    btn.dataset.state = 'loading';
+    btn.textContent = 'Sending…';
+    const res = await replay(s.token, 'apply');
+    if (!replayOk(res)) {
+      showError(action, res?.status);
+      return;
+    }
+    await chrome.runtime.sendMessage({
+      type: 'SYF_LOG_ACTION',
+      entry: {
+        type: action === 'nah' ? 'notInterested' : 'dontRecommendChannel',
+        source: 'app',
+        videoId: current.videoId,
+        channelId: current.channelId,
+        title: current.title,
+        channelName: current.channelName,
+        actionToken: s.token,
+        undoToken: s.undoToken,
+      },
+    } as SyfMessage);
+    console.log(TAG, action, 'submitted');
+    await refreshAvailability();
   }
 }
 
 function onClick(action: string): void {
+  if (action === 'info') {
+    void openLog();
+    return;
+  }
   if (action === 'nah' || action === 'hate-channel') {
-    submit(action);
+    void onToggle(action);
     return;
   }
   console.log(TAG, 'click:', action, '(not wired yet)');
@@ -105,10 +174,11 @@ function buildBar(): HTMLElement {
     const btn = document.createElement('button');
     btn.className = 'syf-btn';
     btn.dataset.action = def.action;
-    btn.dataset.state = 'disabled';
     btn.textContent = def.label;
     btn.title = def.tip;
-    btn.disabled = true;
+    const isInfo = def.action === 'info';
+    btn.disabled = !isInfo;
+    btn.dataset.state = isInfo ? 'ready' : 'disabled';
     btn.addEventListener('click', () => onClick(def.action));
     bar.appendChild(btn);
     buttons[def.action] = btn;
@@ -124,51 +194,45 @@ function findMount(): HTMLElement | null {
   return null;
 }
 
-function removeBar(): void {
-  document.getElementById(BAR_ID)?.remove();
-}
-
-// Reflect an already-submitted state so frequent refreshes don't re-enable a sent button.
-function showSent(action: 'nah' | 'hate-channel'): void {
-  const btn = buttons[action];
-  if (!btn) return;
-  btn.dataset.state = 'sent';
-  btn.disabled = true;
-  btn.textContent = SENT_LABELS[action];
-  btn.title = 'Submitted to YouTube.';
-}
-
 async function refreshAvailability(): Promise<void> {
   const videoId = getVideoId();
-  const nah = buttons['nah'];
-  const hate = buttons['hate-channel'];
-  if (!nah || !hate) return;
+  if (!buttons['nah'] || !buttons['hate-channel']) return;
   if (!videoId) {
-    setDisabled(nah, NAH_UNAVAIL);
-    setDisabled(hate, HATE_UNAVAIL);
+    state.nah = {};
+    state['hate-channel'] = {};
+    renderButton('nah');
+    renderButton('hate-channel');
     return;
   }
   try {
-    const msg: SyfMessage = { type: 'SYF_LOOKUP', videoId, channelId: current.channelId };
-    const r = (await chrome.runtime.sendMessage(msg)) as LookupResult | undefined;
-    tokens = { nah: r?.nahToken, hate: r?.hateToken };
-
-    if (sentFor.nah === videoId) showSent('nah');
-    else if (r?.nah) setEnabled(nah, 'Send YouTube’s real “Not interested” for this video (cached).');
-    else setDisabled(nah, NAH_UNAVAIL);
-
-    if (sentFor.hate === videoId) showSent('hate-channel');
-    else if (r?.hate) setEnabled(hate, 'Send YouTube’s real “Don’t recommend channel” (cached).');
-    else setDisabled(hate, HATE_UNAVAIL);
+    const r = (await chrome.runtime.sendMessage({
+      type: 'SYF_LOOKUP',
+      videoId,
+      channelId: current.channelId,
+    } as SyfMessage)) as LookupResult | undefined;
+    state.nah = {
+      token: r?.nahToken,
+      undoToken: r?.nahUndoToken,
+      activeId: r?.nahActive?.id,
+      activeUndoToken: r?.nahActive?.undoToken,
+    };
+    state['hate-channel'] = {
+      token: r?.hateToken,
+      undoToken: r?.hateUndoToken,
+      activeId: r?.hateActive?.id,
+      activeUndoToken: r?.hateActive?.undoToken,
+    };
+    renderButton('nah');
+    renderButton('hate-channel');
   } catch {
-    /* SW may be waking; next schedule() retries */
+    /* SW waking; next schedule() retries */
   }
 }
 
 function ensureBar(): void {
   const videoId = getVideoId();
   if (!videoId) {
-    removeBar();
+    document.getElementById(BAR_ID)?.remove();
     current = {};
     return;
   }
@@ -179,36 +243,161 @@ function ensureBar(): void {
     if (!mount) return;
     mount.prepend(buildBar());
     console.log(TAG, 'bar injected for video', videoId);
-    const msg: SyfMessage = { type: 'SYF_INJECTED', videoId };
-    chrome.runtime?.sendMessage?.(msg).catch(() => {});
+    chrome.runtime?.sendMessage?.({ type: 'SYF_INJECTED', videoId } as SyfMessage).catch(() => {});
   }
   void refreshAvailability();
 }
 
-// messages from the MAIN-world bridge
+// --- action-log panel ---
+async function openLog(): Promise<void> {
+  closeLog();
+  const res = (await chrome.runtime.sendMessage({ type: 'SYF_GET_LOG' } as SyfMessage)) as LogResult | undefined;
+  const log = res?.log ?? [];
+
+  const overlay = document.createElement('div');
+  overlay.id = MODAL_ID;
+  overlay.className = 'syf-modal';
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeLog();
+  });
+
+  const panel = document.createElement('div');
+  panel.className = 'syf-modal-panel';
+  panel.innerHTML = `<div class="syf-modal-head"><strong>Seth’s YouTube Fixer — action log</strong>
+    <button class="syf-modal-close" title="Close">✕</button></div>`;
+  panel.querySelector('.syf-modal-close')!.addEventListener('click', closeLog);
+
+  const list = document.createElement('div');
+  list.className = 'syf-modal-list';
+  if (!log.length) {
+    list.innerHTML = `<div class="syf-empty">No actions yet. Use Nah / Hate this channel, or YouTube’s own “Not interested” / “Don’t recommend channel”.</div>`;
+  } else {
+    for (const entry of log) list.appendChild(renderLogRow(entry));
+  }
+  panel.appendChild(list);
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+}
+
+function closeLog(): void {
+  document.getElementById(MODAL_ID)?.remove();
+}
+
+function renderLogRow(entry: ActionLogEntry): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'syf-row' + (entry.undone ? ' syf-undone' : '');
+  const typeLabel = entry.type === 'notInterested' ? 'Not interested' : 'Don’t recommend channel';
+  const when = new Date(entry.ts).toLocaleString();
+  const title = entry.title || entry.channelName || entry.videoId || '(unknown)';
+  row.innerHTML = `<div class="syf-row-meta">
+      <div class="syf-row-title">${escapeHtml(title)}</div>
+      <div class="syf-row-sub">${typeLabel} · <span class="syf-src syf-src-${entry.source}">${entry.source}</span> · ${escapeHtml(when)}${entry.undone ? ' · <em>undone</em>' : ''}</div>
+    </div>`;
+
+  const btn = document.createElement('button');
+  btn.className = 'syf-row-btn';
+  if (!entry.undone && entry.undoToken) {
+    btn.textContent = 'Undo';
+    btn.addEventListener('click', () => void logUndo(entry));
+  } else if (entry.undone && entry.actionToken) {
+    btn.textContent = 'Redo';
+    btn.addEventListener('click', () => void logRedo(entry));
+  } else {
+    btn.style.visibility = 'hidden';
+  }
+  row.appendChild(btn);
+  return row;
+}
+
+async function logUndo(entry: ActionLogEntry): Promise<void> {
+  if (!entry.undoToken) return;
+  const res = await replay(entry.undoToken, 'undo');
+  if (replayOk(res)) {
+    await chrome.runtime.sendMessage({ type: 'SYF_MARK_UNDONE', id: entry.id } as SyfMessage);
+    await openLog();
+    void refreshAvailability();
+  }
+}
+
+async function logRedo(entry: ActionLogEntry): Promise<void> {
+  if (!entry.actionToken) return;
+  const res = await replay(entry.actionToken, 'apply');
+  if (replayOk(res)) {
+    await chrome.runtime.sendMessage({
+      type: 'SYF_LOG_ACTION',
+      entry: {
+        type: entry.type,
+        source: 'app',
+        videoId: entry.videoId,
+        channelId: entry.channelId,
+        title: entry.title,
+        channelName: entry.channelName,
+        actionToken: entry.actionToken,
+        undoToken: entry.undoToken,
+      },
+    } as SyfMessage);
+    await openLog();
+    void refreshAvailability();
+  }
+}
+
+// --- messages from the MAIN-world bridge ---
 window.addEventListener('message', (e: MessageEvent) => {
   if (e.source !== window) return;
   const d = e.data;
   if (!d || d.__syf !== true || d.dir !== 'from-page') return;
   switch (d.type) {
-    case 'CAPTURE': {
-      const msg: SyfMessage = { type: 'SYF_CAPTURE', items: d.items };
-      chrome.runtime?.sendMessage?.(msg).catch(() => {});
+    case 'CAPTURE':
+      chrome.runtime?.sendMessage?.({ type: 'SYF_CAPTURE', items: d.items } as SyfMessage).catch(() => {});
       break;
-    }
-    case 'WATCH_CONTEXT': {
+    case 'WATCH_CONTEXT':
       current = { videoId: d.videoId, channelId: d.channelId, channelName: d.channelName, title: d.title };
       void refreshAvailability();
       break;
-    }
     case 'REPLAY_RESULT': {
-      onReplayResult(d.action, d.result);
+      const resolve = d.requestId && pending.get(d.requestId);
+      if (resolve) {
+        pending.delete(d.requestId);
+        resolve(d.result);
+      }
+      break;
+    }
+    case 'NATIVE_ACTION': {
+      const i = d.info || {};
+      chrome.runtime
+        ?.sendMessage?.({
+          type: 'SYF_LOG_ACTION',
+          entry: {
+            type: i.type,
+            source: 'native',
+            videoId: i.videoId,
+            channelId: i.channelId,
+            title: i.title,
+            channelName: i.channelName,
+            actionToken: i.actionToken,
+            undoToken: i.undoToken,
+          },
+        } as SyfMessage)
+        .catch(() => {});
+      console.log(TAG, 'native action captured:', i.type, i.videoId || i.channelId);
+      setTimeout(() => void refreshAvailability(), 500);
+      break;
+    }
+    case 'NATIVE_UNDO': {
+      const i = d.info || {};
+      chrome.runtime
+        ?.sendMessage?.({
+          type: 'SYF_MARK_UNDONE',
+          match: { type: i.type, videoId: i.videoId, channelId: i.channelId },
+        } as SyfMessage)
+        .catch(() => {});
+      setTimeout(() => void refreshAvailability(), 500);
       break;
     }
   }
 });
 
-// SPA-aware scheduling
+// --- SPA-aware scheduling ---
 let scheduled = false;
 function schedule(): void {
   if (scheduled) return;

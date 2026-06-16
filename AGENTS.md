@@ -44,14 +44,24 @@ cached endpoint exists for that video/channel.
   - **Undo caveat:** the "Not interested" response has NO undo token — only "Tell us why" reason
     tokens. There is no clean programmatic undo for watch-page Nah (real Undo lives in the feed's
     replacement card). Don't show a fake Undo; "Nah sent ✓" is the honest end state.
-- **Feature 1 — DONE:** clicking the button submits real feedback. Nah verified end-to-end
-  (click → bridge POST → `isProcessed:true` → "Nah sent ✓"). Hate uses the identical endpoint/
-  path (validated via Nah; not yet exercised by a click). Honest sent/error states, no fake Undo.
+- **Feature 1 — DONE (submit + toggle + log + native capture):**
+  - Click submits real feedback; **click again undoes it** (toggle). Undo works because the card's
+    `feedbackEndpoint` embeds `…undoFeedbackEndpoint.undoToken`; POSTing that reverses the action
+    (`isProcessed:true`). Captured + cached alongside the action token.
+  - **Action log** (`syf.actionlog`, ≤1000 entries) records every action with type/source/video/
+    undo token. The bar's **ℹ Info** button opens an in-page panel with per-row **Undo / Redo**.
+  - **Native capture:** bridge hooks YouTube's own `/youtubei/v1/feedback` POSTs; if the token
+    matches our captured index, it's logged `source:'native'` (undoable). Limitation: only matches
+    videos captured classically — native actions on `lockupViewModel` cards can't be identified.
+  - Verified net-neutral via `scripts/{test-toggle-log,test-native,test-undo,validate-replay}.mjs`.
+  - NOTE: bridge exposes `window.__syfDebug` (tokenIndex peek) for tests — gate/remove before any
+    wider distribution (a page script could read a cached feedback token).
 - **Open / next options:** (a) Feature 2 — Wipe history (My Activity); (b) Feature 3 — Comment
-  search (YouTube Data API); (c) Feature 1 polish — improve capture coverage (lockupViewModel /
-  more surfaces), exercise Hate end-to-end, test aged/cross-session token replay.
+  search (YouTube Data API); (c) more Feature 1 coverage (lockupViewModel tokens), exercise Hate
+  end-to-end, aged/cross-session replay.
 
-Dev/measurement scripts: `scripts/{recon-feedback,measure-feedback,validate-replay,test-click}.mjs`.
+Dev/test scripts in `scripts/`: recon-feedback, recon-undo, measure-feedback, validate-replay,
+test-click, test-undo, test-toggle-log, test-native, diag.
 
 ## Layout
 

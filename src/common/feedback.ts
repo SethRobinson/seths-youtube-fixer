@@ -6,12 +6,15 @@ export interface CaptureItem {
   channelName?: string;
   title?: string;
   notInterestedToken?: string;
+  notInterestedUndoToken?: string;
   dontRecommendChannelToken?: string;
+  dontRecommendChannelUndoToken?: string;
   sourcePage?: string;
 }
 
 export interface CachedToken {
   token: string;
+  undoToken?: string;
   capturedAt: number;
   sourcePage?: string;
   sampleVideoId?: string;
@@ -48,7 +51,25 @@ export interface FeedbackCache {
   stats: FeedbackStats;
 }
 
+export type FeedbackType = 'notInterested' | 'dontRecommendChannel';
+
+export interface ActionLogEntry {
+  id: string;
+  ts: number;
+  type: FeedbackType;
+  source: 'app' | 'native';
+  videoId?: string;
+  channelId?: string;
+  title?: string;
+  channelName?: string;
+  actionToken?: string;
+  undoToken?: string;
+  undone: boolean;
+  undoneAt?: number;
+}
+
 export const FEEDBACK_KEY = 'syf.feedback';
+export const ACTIONLOG_KEY = 'syf.actionlog';
 export const FEEDBACK_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export function emptyCache(): FeedbackCache {
