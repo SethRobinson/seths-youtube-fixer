@@ -28,7 +28,9 @@ cached endpoint exists for that video/channel.
 - **Feature 1a — DONE (capture + availability, dry-run clicks):** The MAIN-world bridge
   parses `ytInitialData` + hooks `/youtubei/v1/{browse,next,search}` responses to capture
   "Not interested" (`feedbackToken`, icon HIDE) and "Don't recommend channel" (icon REMOVE)
-  tokens, keyed by video/channel in the SW cache (`syf.feedback`, 7-day TTL). On a watch
+  tokens, keyed by video/channel in the SW cache (`syf.feedback`, 7-day TTL; `unlimitedStorage` +
+  LRU-capped at 2000 videos/2000 channels so it can't hit the 10 MB quota and silently drop
+  captures). On a watch
   page, Nah/Hate light up when a token is cached. **Clicks are DRY-RUN — nothing is POSTed
   yet.** Measure with `node scripts/measure-feedback.mjs`.
   - Coverage (fixed 2026-06-16): the extractor now handles BOTH classic (`videoId`+`menu`) and the
