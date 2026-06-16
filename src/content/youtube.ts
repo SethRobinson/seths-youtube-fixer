@@ -15,6 +15,12 @@ const NAH_UNAVAIL =
 const HATE_UNAVAIL =
   'YouTube hasn’t exposed a real “Don’t recommend channel” action for this creator in this session yet.';
 
+// Shown as a toast when a grayed-out button is clicked.
+const NAH_REASON =
+  'Nah isn’t available for this video yet. YouTube only exposes a real “Not interested” action on recommendation cards — so we can only send it for videos we’ve seen as a card. Browse Home, Search, or the Up-next sidebar until this video appears there, then come back.';
+const HATE_REASON =
+  '“Hate this channel” isn’t available yet. We haven’t captured YouTube’s real “Don’t recommend channel” action for this creator this session. Browse a few of their videos as recommendation cards (Home / Search / Up-next), then return here.';
+
 interface BtnDef {
   action: string;
   label: string;
@@ -55,6 +61,21 @@ function escapeHtml(s: unknown): string {
   );
 }
 
+function showToast(message: string): void {
+  document.getElementById('syf-toast')?.remove();
+  const t = document.createElement('div');
+  t.id = 'syf-toast';
+  t.className = 'syf-toast';
+  t.textContent = message;
+  t.addEventListener('click', () => t.remove());
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('syf-toast-show'));
+  setTimeout(() => {
+    t.classList.remove('syf-toast-show');
+    setTimeout(() => t.remove(), 250);
+  }, 6500);
+}
+
 // --- promise-based replay through the MAIN-world bridge ---
 const pending = new Map<string, (r: any) => void>();
 function replay(token: string, mode: 'apply' | 'undo'): Promise<any> {
@@ -90,7 +111,8 @@ function renderButton(action: 'nah' | 'hate-channel'): void {
     btn.textContent = LABELS[action];
     btn.title = action === 'nah' ? NAH_TIP : HATE_TIP;
   } else {
-    btn.disabled = true;
+    // Stay clickable so a click can explain WHY it's unavailable (toast).
+    btn.disabled = false;
     btn.dataset.state = 'disabled';
     btn.textContent = LABELS[action];
     btn.title = action === 'nah' ? NAH_UNAVAIL : HATE_UNAVAIL;
@@ -154,7 +176,13 @@ function onClick(action: string): void {
     return;
   }
   if (action === 'nah' || action === 'hate-channel') {
-    void onToggle(action);
+    const s = state[action];
+    if (s.activeId || s.token) void onToggle(action);
+    else showToast(action === 'nah' ? NAH_REASON : HATE_REASON);
+    return;
+  }
+  if (action === 'find-comments') {
+    showToast('Comment search isn’t built yet — coming soon.');
     return;
   }
   console.log(TAG, 'click:', action, '(not wired yet)');
@@ -176,9 +204,8 @@ function buildBar(): HTMLElement {
     btn.dataset.action = def.action;
     btn.textContent = def.label;
     btn.title = def.tip;
-    const isInfo = def.action === 'info';
-    btn.disabled = !isInfo;
-    btn.dataset.state = isInfo ? 'ready' : 'disabled';
+    btn.disabled = false; // clickable; availability is conveyed via data-state
+    btn.dataset.state = def.action === 'info' ? 'ready' : 'disabled';
     btn.addEventListener('click', () => onClick(def.action));
     bar.appendChild(btn);
     buttons[def.action] = btn;

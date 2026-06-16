@@ -34,10 +34,17 @@
 
 .syf-btn[disabled] {
   opacity: 0.45;
-  cursor: not-allowed;
+  cursor: progress;
 }
 
-.syf-btn:not([disabled]):hover {
+/* Grayed-but-clickable: clicking explains why it's unavailable. */
+.syf-btn[data-state='disabled'] {
+  opacity: 0.5;
+  cursor: help;
+}
+
+.syf-btn[data-state='ready']:hover,
+.syf-btn[data-state='sent']:hover {
   background: #3f3f3f;
 }
 
@@ -172,4 +179,28 @@
 }
 .syf-row-btn:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* --- toast --- */
+.syf-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%) translateY(12px);
+  z-index: 100000;
+  max-width: min(540px, 90vw);
+  padding: 12px 16px;
+  background: #181818;
+  color: #f1f1f1;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  font: 13px/1.45 'Roboto', Arial, sans-serif;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  cursor: pointer;
+}
+.syf-toast-show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
