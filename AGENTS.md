@@ -69,15 +69,20 @@ cached endpoint exists for that video/channel.
     exercised** — validate on a tiny window with the user's OK before trusting it.
   - Caveat: timestamps are minute-precision, assumed "today" (yesterday if the time is in the
     future). Deletion re-scans after each click (DOM mutates).
-  - **BLOCKER (found 2026-06-16):** the per-item delete-click does NOT work from the content
-    script. Clicking the trash opens a confirm dialog whose "Delete" is a Material Web button
-    (`VfPpkd-LgbsSe`) that requires a TRUSTED event. Content scripts can only dispatch synthetic
-    events (verified: programmatic `.click()` and a full `pointerdown→…→click` sequence both leave
-    the item count unchanged). So Adapter A (UI automation) is blocked. Real options: (a) Adapter B
-    — replicate My Activity's `batchexecute` delete RPC with the per-item delete token (mirrors the
-    working YouTube-feedback POST; sidesteps the UI); (b) `chrome.debugger` to dispatch trusted CDP
-    input (heavy permission + visible banner); (c) ship scan+review and have the user click Delete
-    manually. `deleteInWindow` currently reports `deleted:0` honestly when stuck.
+  - Adapter A (UI click) is dead: the confirm "Delete" is a Material Web button (`VfPpkd-LgbsSe`)
+    requiring a TRUSTED event, which content scripts can't dispatch (verified: `.click()` and full
+    pointer sequences leave the count unchanged).
+  - **Adapter B — RPC delete (IMPLEMENTED, chosen by Seth; live-delete NOT yet verified):**
+    `myactivity.ts` deletes via `POST /_/FootprintsMyactivityUi/data/batchexecute?rpcids=TmdDAd`
+    with `f.req=[[["TmdDAd","[[null,[\"youtube\"]],[\"<token>\"]]",null,"generic"]]]&at=<at>`.
+    Per-item `<token>` = the `data-token` attr on the item's `<c-wiz>` ancestor (also `data-date`);
+    `at`/`f.sid`/`bl` parsed from the inline `WIZ_global_data` script (`SNlM0e`/`FdrFJe`/`cfb2h`).
+    Same-origin authed fetch — no trusted-event problem. Captured from a real delete via
+    `scripts/recon-ma-rpc(2).mjs`.
+  - **Live validation pending:** couldn't verify end-to-end this session — fresh watches take >3.5
+    min to propagate to My Activity, and the strict authorized "last 30 min" window was empty
+    (older test-watches fall outside it; deleting them is correctly blocked as out-of-scope).
+    Finalize by: deleting a propagated item in an authorized window, or first real use via the UI.
 - **Open / next options:** validate the real delete (small window); Feature 3 — Comment search
   (needs API key); more Feature 1 coverage (lockupViewModel), Hate end-to-end, aged replay.
 

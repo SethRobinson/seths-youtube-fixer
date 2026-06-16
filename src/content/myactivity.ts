@@ -1,58 +1,67 @@
 // Content script for myactivity.google.com (YouTube history). Scans activity
-// items, pairs each "Delete activity item" button with the timestamp that
-// precedes it in document order, and (on explicit request) deletes those that
-// fall in a time window. Scanning is read-only; deletion is irreversible.
+// items and deletes those in a time window via My Activity's internal delete RPC
+// (Adapter B) — a same-origin authenticated fetch, no fragile UI clicks.
+//
+// Each item is wrapped in a <c-wiz data-token data-date> whose data-token is the
+// delete token; at/f.sid/bl come from the inline WIZ_global_data script.
 import type { SyfMessage } from '../common/messages';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const TIME_RE = /\b(\d{1,2}):(\d{2})\s?(AM|PM)\b/i;
+const DELETE_RPC = 'TmdDAd';
 
 interface ScannedItem {
-  button: HTMLButtonElement;
   title: string;
   timeText: string | null;
   ms: number | null;
+  token: string | null;
+  date: string | null;
 }
 
-function parseTimeToMs(timeText: string, nowMs: number): number | null {
-  const m = timeText.match(TIME_RE);
+function parseToMs(dateStr: string | null, timeText: string | null, nowMs: number): number | null {
+  const m = timeText?.match(TIME_RE);
   if (!m) return null;
   let h = parseInt(m[1], 10);
   const min = parseInt(m[2], 10);
   const ap = m[3].toUpperCase();
   if (ap === 'PM' && h !== 12) h += 12;
   if (ap === 'AM' && h === 12) h = 0;
+  if (dateStr && /^\d{8}$/.test(dateStr)) {
+    return new Date(+dateStr.slice(0, 4), +dateStr.slice(4, 6) - 1, +dateStr.slice(6, 8), h, min, 0, 0).getTime();
+  }
   const now = new Date(nowMs);
   let ms = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, min, 0, 0).getTime();
-  if (ms > nowMs + 60_000) ms -= 24 * 3600 * 1000; // a "future" time means yesterday
+  if (ms > nowMs + 60_000) ms -= 24 * 3600 * 1000;
   return ms;
 }
 
-// Walk the DOM in document order; the last time text seen before a delete button
-// is that item's timestamp (handles both per-row and grouped-time layouts).
+function tokenFor(btn: Element): { token: string | null; date: string | null } {
+  let cur: Element | null = btn;
+  for (let i = 0; i < 12 && cur; i++) {
+    if (cur.hasAttribute('data-token')) return { token: cur.getAttribute('data-token'), date: cur.getAttribute('data-date') };
+    cur = cur.parentElement;
+  }
+  return { token: null, date: null };
+}
+
+// Walk the DOM in document order: the last time text before a delete button is
+// that item's timestamp; the button's <c-wiz> ancestor holds its delete token.
 function collect(): ScannedItem[] {
   const out: ScannedItem[] = [];
   const now = Date.now();
   let lastTime: string | null = null;
-  let lastMs: number | null = null;
   const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
   let node: Node | null;
   while ((node = tw.nextNode())) {
     if (node.nodeType === Node.TEXT_NODE) {
       const m = (node.nodeValue || '').match(TIME_RE);
-      if (m) {
-        lastTime = m[0];
-        lastMs = parseTimeToMs(m[0], now);
-      }
+      if (m) lastTime = m[0];
     } else if (node.nodeType === Node.ELEMENT_NODE && (node as Element).tagName === 'BUTTON') {
-      const al = (node as HTMLButtonElement).getAttribute('aria-label') || '';
+      const el = node as HTMLButtonElement;
+      const al = el.getAttribute('aria-label') || '';
       if (al.startsWith('Delete activity item')) {
-        out.push({
-          button: node as HTMLButtonElement,
-          title: al.replace(/^Delete activity item\s*/, '').trim(),
-          timeText: lastTime,
-          ms: lastMs,
-        });
+        const { token, date } = tokenFor(el);
+        out.push({ title: al.replace(/^Delete activity item\s*/, '').trim(), timeText: lastTime, ms: parseToMs(date, lastTime, now), token, date });
       }
     }
   }
@@ -64,37 +73,66 @@ function inWindow(items: ScannedItem[], startMs: number, endMs: number): Scanned
 }
 const toWire = (i: ScannedItem) => ({ title: i.title, timeText: i.timeText ?? '', ms: i.ms ?? 0 });
 
-// Clicking a trash button opens a confirm dialog whose "Delete" control is NOT a
-// <button> — match any clickable element whose text is exactly "Delete".
-function clickConfirmDelete(): boolean {
-  const dialog = document.querySelector('[role="dialog"], [role="alertdialog"]') || document;
-  const els = [...dialog.querySelectorAll('button, [role="button"], a')];
-  const del = els.find((el) => (el.textContent || '').trim().toLowerCase() === 'delete');
-  if (del) {
-    (del as HTMLElement).click();
-    return true;
+// Pull at / f.sid / bl out of the inline WIZ_global_data script.
+function wizParam(name: string): string | null {
+  for (const s of document.querySelectorAll('script')) {
+    const txt = s.textContent || '';
+    if (txt.includes('WIZ_global_data')) {
+      const m = txt.match(new RegExp('"' + name + '":"([^"]+)"'));
+      if (m) return m[1];
+    }
   }
-  return false;
+  return null;
+}
+
+async function rpcDelete(token: string, at: string, fsid: string, bl: string): Promise<boolean> {
+  const params = new URLSearchParams({
+    rpcids: DELETE_RPC,
+    'source-path': '/product/youtube',
+    'f.sid': fsid,
+    bl,
+    hl: 'en',
+    'soc-app': '712',
+    'soc-platform': '1',
+    'soc-device': '1',
+    _reqid: String(Math.floor(Math.random() * 1_000_000)),
+    rt: 'c',
+  });
+  const inner = JSON.stringify([[null, ['youtube']], [token]]);
+  const freq = JSON.stringify([[[DELETE_RPC, inner, null, 'generic']]]);
+  const body = `f.req=${encodeURIComponent(freq)}&at=${encodeURIComponent(at)}&`;
+  try {
+    const res = await fetch(`https://myactivity.google.com/_/FootprintsMyactivityUi/data/batchexecute?${params}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body,
+    });
+    if (!res.ok) return false;
+    const text = await res.text();
+    return text.includes(DELETE_RPC);
+  } catch {
+    return false;
+  }
 }
 
 async function deleteInWindow(startMs: number, endMs: number): Promise<number> {
+  const at = wizParam('SNlM0e');
+  const fsid = wizParam('FdrFJe');
+  const bl = wizParam('cfb2h');
+  if (!at || !fsid || !bl) {
+    console.warn('[SYF] missing WIZ params; cannot delete', { at: !!at, fsid: !!fsid, bl: !!bl });
+    return 0;
+  }
+  // Collect tokens up front (the DOM doesn't auto-remove deleted rows).
+  const items = inWindow(collect(), startMs, endMs).filter((i) => i.token);
+  const seen = new Set<string>();
   let deleted = 0;
-  let stuck = 0;
-  // Stop after 3 passes with no progress so a failed click can't loop forever.
-  for (let pass = 0; pass < 200 && stuck < 3; pass++) {
-    const before = inWindow(collect(), startMs, endMs);
-    if (!before.length) break;
-    before[0].button.click();
-    await wait(850);
-    const confirmed = clickConfirmDelete();
-    await wait(confirmed ? 1000 : 350);
-    const after = inWindow(collect(), startMs, endMs).length;
-    if (after < before.length) {
-      deleted += before.length - after;
-      stuck = 0;
-    } else {
-      stuck++;
-    }
+  for (const it of items) {
+    if (seen.has(it.token!)) continue;
+    seen.add(it.token!);
+    if (await rpcDelete(it.token!, at, fsid, bl)) deleted++;
+    await wait(160);
   }
   return deleted;
 }
@@ -105,14 +143,7 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
     return false;
   }
   if (msg?.type === 'SYF_MA_DELETE') {
-    deleteInWindow(msg.startMs, msg.endMs).then((deleted) => {
-      sendResponse({
-        ok: true,
-        mode: 'delete',
-        deleted,
-        matched: inWindow(collect(), msg.startMs, msg.endMs).map(toWire),
-      });
-    });
+    deleteInWindow(msg.startMs, msg.endMs).then((deleted) => sendResponse({ ok: true, mode: 'delete', deleted, matched: [] }));
     return true;
   }
   return false;
