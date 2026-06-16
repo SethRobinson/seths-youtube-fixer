@@ -58,9 +58,25 @@ cached endpoint exists for that video/channel.
   - Verified net-neutral via `scripts/{test-toggle-log,test-native,test-undo,validate-replay}.mjs`.
   - NOTE: bridge exposes `window.__syfDebug` (tokenIndex peek) for tests — gate/remove before any
     wider distribution (a page script could read a cached feedback token).
-- **UX:** grayed Nah/Hate buttons stay clickable — clicking a grayed one shows a toast explaining
-  why it's unavailable (`showToast`). Buttons: Nah · Hate this channel · Wipe history · Find in
-  comments · ℹ Info.
+- **UX:** grayed Hate-content/Hate-channel buttons stay clickable — clicking a grayed one shows a
+  toast explaining why it's unavailable (`showToast`). Bar buttons: **Hate content** · **Hate
+  channel** · **⏸ Pause history** · **Wipe history** · **Find in comments** · **ℹ Info**.
+  ("Nah"/"Hate this channel" were renamed to "Hate content"/"Hate channel"; internal action ids
+  stay `nah`/`hate-channel`.)
+- **UX additions (2026-06-16):**
+  - **Wipe history** and **Info** open as standalone pages in new tabs (`src/wipe/`, `src/log/`),
+    not in-page modals (wipe is slow). The log page does Undo/Redo by relaying feedback through an
+    open YouTube tab's bridge (`SYF_RELAY_REPLAY` → `SYF_DO_REPLAY`).
+  - **Find in comments** opens the options page (with a toast) when no API key is set; the options
+    page has step-by-step instructions + deep links to create a free YouTube Data API key.
+  - **Hide Shorts** setting: content script toggles `html.syf-hide-shorts`; CSS hides Shorts
+    shelves/cards/nav across feeds (live via `storage.onChanged`).
+  - **⏸ Pause history** button opens YouTube's watch-history settings (`/feed/history`) in a new
+    tab — a shortcut to the official pause/resume control. A true in-place toggle is deferred: the
+    history on/off control is a non-standard widget (no `role=switch`); the toggle RPC wasn't
+    captured.
+  - Settings now include `hideShorts` and `feedbackTtlDays` (the feedback cache TTL is honored at
+    lookup via `isFresh(token, ttlMs)`).
 - **Feature 2 — Wipe history (scan + UI DONE; delete built, NOT yet validated):**
   - `src/content/myactivity.ts` runs on myactivity.google.com: pairs each "Delete activity item"
     button with the timestamp preceding it in document order (handles grouped times), filters to a
@@ -103,7 +119,8 @@ test-wipe-ui, debug-ma, diag.
 - `src/content/youtube.ts` — isolated-world content script: SPA-nav detection, bar injection.
 - `src/content/page-bridge.ts` — MAIN-world script: reads ytInitialData/ytcfg, session feedback POSTs.
 - `src/content/styles.css` — bar styles.
-- `src/options/`, `src/popup/` — options page (API key) and toolbar popup.
+- `src/options/`, `src/popup/` — options page (API key, hide-shorts, TTL) and toolbar popup.
+- `src/wipe/`, `src/log/` — standalone Wipe-history and action-log pages (opened in new tabs).
 - `src/common/messages.ts` — shared messages/types/settings.
 - `scripts/` — esbuild build + CDP harness (`chrome-lib`, `setup`, `drive`, `reload`, `diag`).
 - `test/` — Playwright (`fixtures.ts` attaches over CDP; `smoke.spec.ts`).
