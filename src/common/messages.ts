@@ -31,7 +31,17 @@ export type SyfMessage =
   | { type: 'SYF_OPEN_OPTIONS' }
   | { type: 'SYF_OPEN_PAGE'; page: 'wipe' | 'log' | 'history' }
   | { type: 'SYF_RELAY_REPLAY'; token: string }
-  | { type: 'SYF_DO_REPLAY'; token: string };
+  | { type: 'SYF_DO_REPLAY'; token: string }
+  | { type: 'SYF_HISTORY'; action: 'toggle' | 'state' }
+  | { type: 'SYF_HISTORY_DO'; action: 'toggle' | 'state' }
+  | { type: 'SYF_RESET' };
+
+export interface HistoryResult {
+  ok: boolean;
+  paused?: boolean | null;
+  found?: boolean;
+  error?: string;
+}
 
 export interface WipeItem {
   title: string;
@@ -83,6 +93,8 @@ export interface SyfSettings {
   confirmBeforeWipe?: boolean;
   feedbackTtlDays?: number; // how long a cached feedback token is considered usable
   hideShorts?: boolean; // hide Shorts shelves/cards from feeds
+  lastHistoryPaused?: boolean; // cached watch-history state for the bar toggle label
+  dismissedWarnings?: Record<string, boolean>; // "don't show again" flags (e.g. { history: true })
 }
 
 export const DEFAULT_SETTINGS: SyfSettings = {
@@ -92,3 +104,6 @@ export const DEFAULT_SETTINGS: SyfSettings = {
   feedbackTtlDays: 7,
   hideShorts: false,
 };
+
+// Storage keys cleared by "Reset data for this extension".
+export const ALL_STORAGE_KEYS = ['syf.feedback', 'syf.actionlog', SETTINGS_KEY];

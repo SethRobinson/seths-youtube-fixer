@@ -297,3 +297,10 @@ html.syf-hide-shorts ytd-pivot-bar-item-renderer:has([tab-title='Shorts']) {
 .syf-wipe-delete:hover {
   background: #e02020 !important;
 }
+.syf-bo-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  margin: 4px 0 14px;
+}

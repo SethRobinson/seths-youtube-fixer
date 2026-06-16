@@ -9,7 +9,14 @@ import {
   type CaptureItem,
   type ActionLogEntry,
 } from '../common/feedback';
-import { SETTINGS_KEY, DEFAULT_SETTINGS, type SyfMessage, type SyfSettings } from '../common/messages';
+import {
+  SETTINGS_KEY,
+  DEFAULT_SETTINGS,
+  ALL_STORAGE_KEYS,
+  type SyfMessage,
+  type SyfSettings,
+  type HistoryResult,
+} from '../common/messages';
 
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('[SYF] installed:', details.reason);
@@ -152,6 +159,30 @@ async function relayReplay(token: string): Promise<any> {
   }
 }
 
+// Toggle/read watch-history pause state by driving /feed/history in a background
+// tab (our content script there extracts the token and submits via the bridge).
+async function handleHistory(action: 'toggle' | 'state'): Promise<HistoryResult> {
+  let tabId: number | undefined;
+  try {
+    const tab = await chrome.tabs.create({ url: 'https://www.youtube.com/feed/history', active: false });
+    tabId = tab.id!;
+    await waitTabComplete(tabId);
+    await delay(3800);
+    const res = await sendToTab(tabId, { type: 'SYF_HISTORY_DO', action } as SyfMessage);
+    return (res as HistoryResult) ?? { ok: false, error: 'no-response' };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  } finally {
+    if (tabId) {
+      try {
+        await chrome.tabs.remove(tabId);
+      } catch {
+        /* gone */
+      }
+    }
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) => {
   switch (msg?.type) {
     case 'SYF_PING':
@@ -261,6 +292,20 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
 
     case 'SYF_RELAY_REPLAY':
       relayReplay(msg.token).then(sendResponse);
+      return true;
+
+    case 'SYF_HISTORY':
+      handleHistory(msg.action).then(async (res) => {
+        if (res.ok && typeof res.paused === 'boolean') {
+          const s = await loadSettings();
+          await chrome.storage.local.set({ [SETTINGS_KEY]: { ...s, lastHistoryPaused: res.paused } });
+        }
+        sendResponse(res);
+      });
+      return true;
+
+    case 'SYF_RESET':
+      chrome.storage.local.remove(ALL_STORAGE_KEYS).then(() => sendResponse({ ok: true }));
       return true;
 
     case 'SYF_STATS':

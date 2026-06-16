@@ -7,6 +7,7 @@ import {
   type SyfMessage,
   type LookupResult,
   type SyfSettings,
+  type HistoryResult,
 } from '../common/messages';
 
 const TAG = '[SYF]';
@@ -54,10 +55,87 @@ const buttons: Record<string, HTMLButtonElement> = {};
 const state: Record<string, ActionState> = { nah: {}, 'hate-channel': {} };
 let current: { videoId?: string; channelId?: string; channelName?: string; title?: string } = {};
 let settings: SyfSettings = { ...DEFAULT_SETTINGS };
+let historyInfo: { token?: string | null; paused?: boolean | null; found?: boolean } = {};
+
+async function loadSettingsFresh(): Promise<SyfSettings> {
+  const o = await chrome.storage.local.get(SETTINGS_KEY);
+  return { ...DEFAULT_SETTINGS, ...(o[SETTINGS_KEY] ?? {}) };
+}
 
 function applySettings(s: SyfSettings): void {
   settings = s;
   document.documentElement.classList.toggle('syf-hide-shorts', !!s.hideShorts);
+  updateHistoryButton();
+}
+
+function updateHistoryButton(): void {
+  const b = buttons['pause-history'];
+  if (!b) return;
+  const paused = settings.lastHistoryPaused;
+  b.textContent = paused ? '▶ Resume history' : '⏸ Pause history';
+  b.title = paused
+    ? 'Resume YouTube watch history (start recording again).'
+    : 'Pause YouTube watch history (stop recording what you watch).';
+}
+
+// "YouTube changed its code" backoff with an optional "don't show again".
+const BACKOFF_MESSAGES: Record<string, string> = {
+  history:
+    'YouTube appears to have changed its code, so pausing watch history from here no longer works. You can still use YouTube’s own “Pause watch history” control. (Reset this from the extension settings → Reset data.)',
+};
+function showBackoff(key: string): void {
+  if (settings.dismissedWarnings?.[key]) return;
+  document.getElementById('syf-backoff')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'syf-backoff';
+  overlay.className = 'syf-modal';
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+  const panel = document.createElement('div');
+  panel.className = 'syf-modal-panel';
+  panel.innerHTML = `<div class="syf-modal-head"><strong>Heads up</strong></div>
+    <div class="syf-wipe-body">
+      <p class="syf-wipe-note">${BACKOFF_MESSAGES[key] || 'This feature isn’t working — YouTube may have changed its code.'}</p>
+      <label class="syf-bo-check"><input type="checkbox" id="syf-bo-dont" /> Don’t show this again</label>
+      <div class="syf-wipe-actions"><button class="syf-btn" id="syf-bo-ok">OK</button></div>
+    </div>`;
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+  panel.querySelector('#syf-bo-ok')!.addEventListener('click', async () => {
+    if ((panel.querySelector('#syf-bo-dont') as HTMLInputElement).checked) {
+      const cur = await loadSettingsFresh();
+      await chrome.storage.local.set({
+        [SETTINGS_KEY]: { ...cur, dismissedWarnings: { ...(cur.dismissedWarnings || {}), [key]: true } },
+      });
+    }
+    overlay.remove();
+  });
+}
+
+async function toggleHistory(): Promise<void> {
+  const b = buttons['pause-history'];
+  if (!b) return;
+  const prev = b.textContent;
+  b.disabled = true;
+  b.dataset.state = 'loading';
+  b.textContent = 'Working…';
+  const res = (await chrome.runtime.sendMessage({ type: 'SYF_HISTORY', action: 'toggle' } as SyfMessage)) as
+    | HistoryResult
+    | undefined;
+  b.disabled = false;
+  b.dataset.state = 'ready';
+  if (res?.ok && typeof res.paused === 'boolean') {
+    settings = { ...settings, lastHistoryPaused: res.paused };
+    updateHistoryButton();
+    showToast(res.paused ? 'Watch history paused.' : 'Watch history resumed.');
+  } else if (res?.found === false || res?.error === 'no-token') {
+    b.textContent = prev || '⏸ Pause history';
+    showBackoff('history');
+  } else {
+    b.textContent = prev || '⏸ Pause history';
+    showToast('Couldn’t change watch history — try again, or use YouTube’s own settings.');
+  }
 }
 chrome.storage.local.get(SETTINGS_KEY).then((o) => applySettings({ ...DEFAULT_SETTINGS, ...(o[SETTINGS_KEY] ?? {}) }));
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -196,7 +274,7 @@ function onClick(action: string): void {
     return;
   }
   if (action === 'pause-history') {
-    chrome.runtime?.sendMessage?.({ type: 'SYF_OPEN_PAGE', page: 'history' } as SyfMessage).catch(() => {});
+    void toggleHistory();
     return;
   }
   if (action === 'find-comments') {
@@ -233,6 +311,7 @@ function buildBar(): HTMLElement {
     bar.appendChild(btn);
     buttons[def.action] = btn;
   }
+  updateHistoryButton();
   return bar;
 }
 
@@ -354,13 +433,34 @@ window.addEventListener('message', (e: MessageEvent) => {
       setTimeout(() => void refreshAvailability(), 500);
       break;
     }
+    case 'HISTORY_INFO':
+      historyInfo = { token: d.token, paused: d.paused, found: d.found };
+      break;
   }
 });
 
-// Relayed feedback submission from the standalone log page (via the SW).
+// Messages from the SW: relayed feedback submission, and history toggle (this
+// runs on /feed/history, where the bridge extracts the pause/resume token).
 chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) => {
   if (msg?.type === 'SYF_DO_REPLAY') {
     replay(msg.token, 'apply').then((result) => sendResponse(result));
+    return true; // async
+  }
+  if (msg?.type === 'SYF_HISTORY_DO') {
+    if (msg.action === 'state') {
+      sendResponse({ ok: true, paused: historyInfo.paused, found: historyInfo.found });
+      return false;
+    }
+    (async () => {
+      for (let i = 0; i < 12 && !historyInfo.found; i++) await new Promise((r) => setTimeout(r, 500));
+      if (!historyInfo.token) {
+        sendResponse({ ok: false, found: false, error: 'no-token' });
+        return;
+      }
+      const res = await replay(historyInfo.token, 'apply');
+      const ok = replayOk(res);
+      sendResponse({ ok, found: true, paused: ok ? !historyInfo.paused : historyInfo.paused, error: ok ? undefined : 'submit-failed' });
+    })();
     return true; // async
   }
   return false;

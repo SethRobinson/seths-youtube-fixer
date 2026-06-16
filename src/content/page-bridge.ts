@@ -360,6 +360,41 @@ function readWatchContext(): void {
   }
 }
 
+// --- watch-history pause/resume token (only present on /feed/history) ---
+function readHistoryInfo(): void {
+  if (!/\/feed\/history/.test(location.pathname)) return;
+  try {
+    const data = (window as any).ytInitialData;
+    if (!data) return;
+    let token: string | null = null;
+    let paused: boolean | null = null;
+    const seen = new WeakSet<object>();
+    (function walk(o: any) {
+      if (token || !o || typeof o !== 'object' || seen.has(o)) return;
+      seen.add(o);
+      if (Array.isArray(o)) return o.forEach(walk);
+      const label = (textOf(o.text) || textOf(o.title) || (typeof o.content === 'string' ? o.content : '') || '').trim();
+      if (/^pause watch history$/i.test(label) || /^turn on watch history$/i.test(label)) {
+        paused = /^turn on/i.test(label);
+        const s2 = new WeakSet<object>();
+        (function dig(n: any, d: number) {
+          if (token || !n || typeof n !== 'object' || d > 14 || s2.has(n)) return;
+          s2.add(n);
+          if (typeof n.feedbackToken === 'string') {
+            token = n.feedbackToken;
+            return;
+          }
+          for (const k of Object.keys(n)) dig(n[k], d + 1);
+        })(o, 0);
+      }
+      for (const k of Object.keys(o)) walk(o[k]);
+    })(data);
+    post('HISTORY_INFO', { token, paused, found: !!token });
+  } catch {
+    /* noop */
+  }
+}
+
 // --- triggers: parse embedded data + watch context after each navigation ---
 function onNavigate(): void {
   let tries = 0;
@@ -367,6 +402,7 @@ function onNavigate(): void {
     tries++;
     if ((window as any).ytInitialData) captureFrom((window as any).ytInitialData);
     readWatchContext();
+    readHistoryInfo();
     if (tries >= 6) clearInterval(iv);
   }, 700);
 }
