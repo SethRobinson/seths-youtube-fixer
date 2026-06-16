@@ -63,20 +63,26 @@ cached endpoint exists for that video/channel.
   channel** · **⏸ Pause history** · **Wipe history** · **Find in comments** · **ℹ Info**.
   ("Nah"/"Hate this channel" were renamed to "Hate content"/"Hate channel"; internal action ids
   stay `nah`/`hate-channel`.)
-- **UX additions (2026-06-16):**
-  - **Wipe history** and **Info** open as standalone pages in new tabs (`src/wipe/`, `src/log/`),
-    not in-page modals (wipe is slow). The log page does Undo/Redo by relaying feedback through an
-    open YouTube tab's bridge (`SYF_RELAY_REPLAY` → `SYF_DO_REPLAY`).
-  - **Find in comments** opens the options page (with a toast) when no API key is set; the options
-    page has step-by-step instructions + deep links to create a free YouTube Data API key.
-  - **Hide Shorts** setting: content script toggles `html.syf-hide-shorts`; CSS hides Shorts
-    shelves/cards/nav across feeds (live via `storage.onChanged`).
-  - **⏸ Pause history** button opens YouTube's watch-history settings (`/feed/history`) in a new
-    tab — a shortcut to the official pause/resume control. A true in-place toggle is deferred: the
-    history on/off control is a non-standard widget (no `role=switch`); the toggle RPC wasn't
-    captured.
-  - Settings now include `hideShorts` and `feedbackTtlDays` (the feedback cache TTL is honored at
-    lookup via `isFresh(token, ttlMs)`).
+- **UX (2026-06-16):**
+  - **⏸ Pause history / ▶ Resume history** — REAL inline toggle. Pausing/resuming watch history is
+    a `feedbackToken` on the same `/youtubei/v1/feedback` endpoint as Nah/Hate. The bridge extracts
+    the pause/resume token + state from `/feed/history`'s `ytInitialData` (`readHistoryInfo` →
+    `HISTORY_INFO`). Bar → `SYF_HISTORY` → SW opens `/feed/history` in a bg tab → `SYF_HISTORY_DO`
+    submits via the bridge → caches `settings.lastHistoryPaused` (drives the button label). Safety:
+    if the token's gone (`no-token`), `showBackoff('history')` shows a "YouTube changed its code"
+    notice with **Don't show again** (`settings.dismissedWarnings`).
+  - **Wipe history** — quick in-page **presets** dialog; picking a window opens the slow
+    scan/review/delete in a new tab (`wipe.html?minutes=N`) so it doesn't block viewing.
+  - **Info** — opens **settings as an in-page dialog** (iframe of `options/options.html`, allowed by
+    `web_accessible_resources` for youtube.com; CSP permits it). The options page holds: API key +
+    help, Hide Shorts, feedback TTL, the **action log** (Undo/Redo via `SYF_RELAY_REPLAY` →
+    `SYF_DO_REPLAY` relayed through a YouTube tab), **Reset data** (`SYF_RESET` clears
+    `ALL_STORAGE_KEYS` incl. dismissed warnings), and **credits (Seth A. Robinson / rtsoft.com)**.
+    (The standalone `src/log/` page was removed.)
+  - **Find in comments** opens settings/options (with a toast) when no API key is set.
+  - **Hide Shorts** setting toggles `html.syf-hide-shorts`; CSS hides Shorts shelves/cards/nav (live
+    via `storage.onChanged`). Settings include `hideShorts`, `feedbackTtlDays`, `lastHistoryPaused`,
+    `dismissedWarnings`. No current setting needs a page reload (all apply live).
 - **Feature 2 — Wipe history (scan + UI DONE; delete built, NOT yet validated):**
   - `src/content/myactivity.ts` runs on myactivity.google.com: pairs each "Delete activity item"
     button with the timestamp preceding it in document order (handles grouped times), filters to a
