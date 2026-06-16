@@ -5,11 +5,19 @@ import {
   type SyfMessage,
   type LogResult,
 } from '../common/messages';
-import type { ActionLogEntry } from '../common/feedback';
+import {
+  type ActionLogEntry,
+  FEEDBACK_KEY,
+  DEFAULT_CACHE_CAP,
+  MIN_CACHE_CAP,
+  MAX_CACHE_CAP,
+  MAX_FEEDBACK_BYTES,
+} from '../common/feedback';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const apiKey = $<HTMLInputElement>('apiKey');
 const ttlInput = $<HTMLInputElement>('ttlDays');
+const maxVideosInput = $<HTMLInputElement>('maxVideos');
 const hideShorts = $<HTMLInputElement>('hideShorts');
 const savedMsg = $<HTMLSpanElement>('savedMsg');
 const logEl = $<HTMLDivElement>('log');
@@ -29,22 +37,30 @@ async function initSettings() {
   const s = await loadSettings();
   apiKey.value = s.apiKey ?? '';
   ttlInput.value = String(s.feedbackTtlDays ?? 7);
+  maxVideosInput.min = String(MIN_CACHE_CAP);
+  maxVideosInput.max = String(MAX_CACHE_CAP);
+  maxVideosInput.value = String(s.maxCacheVideos ?? DEFAULT_CACHE_CAP);
   hideShorts.checked = !!s.hideShorts;
 }
 
 $<HTMLButtonElement>('save').addEventListener('click', async () => {
   const ttl = parseFloat(ttlInput.value);
+  const capRaw = parseInt(maxVideosInput.value, 10);
+  const cap = Number.isFinite(capRaw) ? Math.min(Math.max(capRaw, MIN_CACHE_CAP), MAX_CACHE_CAP) : DEFAULT_CACHE_CAP;
+  maxVideosInput.value = String(cap); // reflect the clamped value back to the field
   // Serialized merge in the SW so we don't clobber concurrent writers.
   await chrome.runtime.sendMessage({
     type: 'SYF_PATCH_SETTINGS',
     patch: {
       apiKey: apiKey.value.trim(),
       feedbackTtlDays: Number.isFinite(ttl) && ttl > 0 ? ttl : 7,
+      maxCacheVideos: cap,
       hideShorts: hideShorts.checked,
     },
   } as SyfMessage);
   savedMsg.textContent = 'Saved';
   setTimeout(() => (savedMsg.textContent = ''), 1500);
+  void renderCacheSize(); // lowering the cap may have evicted entries — refresh the readout
 });
 
 $<HTMLButtonElement>('reset').addEventListener('click', async () => {
@@ -129,17 +145,19 @@ async function act(entry: ActionLogEntry, kind: 'undo' | 'redo'): Promise<void> 
 
 async function renderCacheSize(): Promise<void> {
   try {
-    const [fbBytes, totalBytes, store] = await Promise.all([
-      chrome.storage.local.getBytesInUse('syf.feedback').catch(() => 0),
+    const [fbBytes, totalBytes, store, settingsStore] = await Promise.all([
+      chrome.storage.local.getBytesInUse(FEEDBACK_KEY).catch(() => 0),
       chrome.storage.local.getBytesInUse(null).catch(() => 0),
-      chrome.storage.local.get('syf.feedback'),
+      chrome.storage.local.get(FEEDBACK_KEY),
+      chrome.storage.local.get(SETTINGS_KEY),
     ]);
-    const fb: any = store['syf.feedback'];
+    const fb: any = store[FEEDBACK_KEY];
+    const cap = (settingsStore[SETTINGS_KEY] as SyfSettings | undefined)?.maxCacheVideos ?? DEFAULT_CACHE_CAP;
     const videos = Object.keys(fb?.videos || {}).length;
     const channels = Object.keys(fb?.channels || {}).length;
-    const kb = (n: number) => (n / 1024).toLocaleString(undefined, { maximumFractionDigits: 0 });
-    cacheSizeEl.textContent = `${videos.toLocaleString()} videos · ${channels.toLocaleString()} channels · ${kb(fbBytes)} KB (extension total ${kb(totalBytes)} KB, of 2,000-video cap).`;
-    cacheBar.style.width = Math.min(100, (videos / 2000) * 100) + '%';
+    const mb = (n: number) => (n / 1048576).toLocaleString(undefined, { maximumFractionDigits: 1 });
+    cacheSizeEl.textContent = `${videos.toLocaleString()} videos · ${channels.toLocaleString()} channels · ${mb(fbBytes)} MB of ${mb(MAX_FEEDBACK_BYTES)} MB (total ${mb(totalBytes)} MB; cap ${cap.toLocaleString()} videos / ${cap.toLocaleString()} channels).`;
+    cacheBar.style.width = Math.min(100, Math.max(videos / cap, channels / cap, fbBytes / MAX_FEEDBACK_BYTES) * 100) + '%';
   } catch {
     cacheSizeEl.textContent = '';
   }

@@ -3,6 +3,8 @@
 import {
   FEEDBACK_KEY,
   ACTIONLOG_KEY,
+  DEFAULT_CACHE_CAP,
+  MAX_FEEDBACK_BYTES,
   emptyCache,
   isFresh,
   type FeedbackCache,
@@ -20,6 +22,13 @@ import {
 
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('[SYF] installed:', details.reason);
+});
+
+// MV3 SWs are ephemeral; flush any pending throttled cache write before suspension.
+// Best-effort (async may not finish) — a lost write is ≤ one throttle window of
+// re-capturable captures.
+chrome.runtime.onSuspend.addListener(() => {
+  void flushCache();
 });
 
 // In-memory copies so lookups (every navigation) don't re-parse storage. The SW
@@ -69,8 +78,7 @@ function patchSettings(patch: Partial<SyfSettings>): Promise<void> {
 }
 
 // Keep the cache bounded (LRU by updatedAt) so it stays fast to load/save.
-const MAX_VIDEOS = 2000;
-const MAX_CHANNELS = 2000;
+// Caps (MAX_VIDEOS / MAX_CHANNELS / MAX_FEEDBACK_BYTES) are shared via ../common/feedback.
 function evictOldest(map: Record<string, { updatedAt: number }>, max: number): void {
   const keys = Object.keys(map);
   if (keys.length <= max) return;
@@ -78,7 +86,7 @@ function evictOldest(map: Record<string, { updatedAt: number }>, max: number): v
   for (const k of keys.slice(0, keys.length - max)) delete map[k];
 }
 
-function mergeCapture(cache: FeedbackCache, items: CaptureItem[]): boolean {
+function mergeCapture(cache: FeedbackCache, items: CaptureItem[], maxEntries: number): boolean {
   let changed = false;
   const now = Date.now();
   for (const it of items) {
@@ -88,32 +96,89 @@ function mergeCapture(cache: FeedbackCache, items: CaptureItem[]): boolean {
     if (it.title) v.title = it.title;
     if (it.channelId) v.channelId = it.channelId;
     if (it.channelName) v.channelName = it.channelName;
-    if (it.notInterestedToken) {
+    // Only flag `changed` (→ a write) when a token is genuinely new. Re-seeing an
+    // already-cached token is the common case while browsing and must NOT trigger a write.
+    if (it.notInterestedToken && it.notInterestedToken !== v.notInterested?.token) {
       v.notInterested = { token: it.notInterestedToken, undoToken: it.notInterestedUndoToken, capturedAt: now };
       changed = true;
     }
     if (it.dontRecommendChannelToken) {
-      const dr = { token: it.dontRecommendChannelToken, undoToken: it.dontRecommendChannelUndoToken, capturedAt: now };
       if (it.channelId) {
-        // Store channel-level only — don't duplicate the (long) token in the video entry too.
         const c = (cache.channels[it.channelId] ??= { channelId: it.channelId, updatedAt: now });
         if (it.channelName) c.channelName = it.channelName;
-        c.dontRecommendChannel = { ...dr, sampleVideoId: it.videoId };
-        c.updatedAt = now;
-        delete v.dontRecommendChannel;
-      } else {
-        v.dontRecommendChannel = dr; // fallback when we couldn't extract a channelId
+        if (it.dontRecommendChannelToken !== c.dontRecommendChannel?.token) {
+          // Store channel-level only — don't duplicate the (long) token in the video entry too.
+          c.dontRecommendChannel = {
+            token: it.dontRecommendChannelToken,
+            undoToken: it.dontRecommendChannelUndoToken,
+            capturedAt: now,
+            sampleVideoId: it.videoId,
+          };
+          c.updatedAt = now;
+          changed = true;
+        }
+        if (v.dontRecommendChannel) {
+          delete v.dontRecommendChannel;
+          changed = true;
+        }
+      } else if (it.dontRecommendChannelToken !== v.dontRecommendChannel?.token) {
+        // Fallback when we couldn't extract a channelId.
+        v.dontRecommendChannel = {
+          token: it.dontRecommendChannelToken,
+          undoToken: it.dontRecommendChannelUndoToken,
+          capturedAt: now,
+        };
+        changed = true;
       }
-      changed = true;
     }
     v.updatedAt = now;
   }
-  evictOldest(cache.videos, MAX_VIDEOS);
-  evictOldest(cache.channels, MAX_CHANNELS);
+  evictOldest(cache.videos, maxEntries);
+  evictOldest(cache.channels, maxEntries);
   cache.stats.videosTracked = Object.keys(cache.videos).length;
   cache.stats.channelsTracked = Object.keys(cache.channels).length;
   if (changed) cache.stats.lastCaptureAt = now;
   return changed;
+}
+
+// Writes are coalesced: captures mutate the in-memory cache and schedule a flush at
+// most once per FLUSH_THROTTLE_MS, so a scroll burst (~160 videos) is one write, not
+// 160. The in-memory cache is always current, so lookups never wait on a flush.
+const FLUSH_THROTTLE_MS = 2_000;
+let cacheDirty = false;
+let lastFlushAt = 0;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleFlush(): void {
+  cacheDirty = true;
+  if (flushTimer) return;
+  const wait = Math.max(0, FLUSH_THROTTLE_MS - (Date.now() - lastFlushAt));
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    void enqueue(flushCache);
+  }, wait);
+}
+
+async function flushCache(): Promise<void> {
+  if (!cacheDirty || !cacheMem) return;
+  cacheDirty = false;
+  lastFlushAt = Date.now();
+  await chrome.storage.local.set({ [FEEDBACK_KEY]: cacheMem });
+  // 50 MB byte backstop (≈never fires at the 10K entry cap / ~15 MB): if the stored
+  // blob is over, evict the oldest entries in chunks and rewrite until it fits.
+  let bytes = await chrome.storage.local.getBytesInUse(FEEDBACK_KEY).catch(() => 0);
+  while (
+    bytes > MAX_FEEDBACK_BYTES &&
+    Object.keys(cacheMem.videos).length + Object.keys(cacheMem.channels).length > 0
+  ) {
+    console.warn('[SYF] feedback cache over 50 MB byte cap — evicting oldest');
+    evictOldest(cacheMem.videos, Math.max(0, Object.keys(cacheMem.videos).length - 500));
+    evictOldest(cacheMem.channels, Math.max(0, Object.keys(cacheMem.channels).length - 500));
+    cacheMem.stats.videosTracked = Object.keys(cacheMem.videos).length;
+    cacheMem.stats.channelsTracked = Object.keys(cacheMem.channels).length;
+    await chrome.storage.local.set({ [FEEDBACK_KEY]: cacheMem });
+    bytes = await chrome.storage.local.getBytesInUse(FEEDBACK_KEY).catch(() => 0);
+  }
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -223,8 +288,8 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
 
     case 'SYF_CAPTURE':
       enqueue(async () => {
-        const cache = await loadCache();
-        if (mergeCapture(cache, msg.items)) await chrome.storage.local.set({ [FEEDBACK_KEY]: cache });
+        const [cache, settings] = await Promise.all([loadCache(), loadSettings()]);
+        if (mergeCapture(cache, msg.items, settings.maxCacheVideos ?? DEFAULT_CACHE_CAP)) scheduleFlush();
       });
       sendResponse({ ok: true });
       return false;
@@ -327,11 +392,38 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       });
       return true;
 
-    case 'SYF_PATCH_SETTINGS':
-      patchSettings(msg.patch).then(() => sendResponse({ ok: true }));
+    case 'SYF_PATCH_SETTINGS': {
+      const newCap = msg.patch.maxCacheVideos;
+      patchSettings(msg.patch).then(async () => {
+        // If the cache cap changed, shrink the cache now (not just on the next capture).
+        if (typeof newCap === 'number') {
+          if (flushTimer) {
+            clearTimeout(flushTimer);
+            flushTimer = null;
+          }
+          await enqueue(async () => {
+            const cache = await loadCache();
+            evictOldest(cache.videos, newCap);
+            evictOldest(cache.channels, newCap);
+            cache.stats.videosTracked = Object.keys(cache.videos).length;
+            cache.stats.channelsTracked = Object.keys(cache.channels).length;
+            await chrome.storage.local.set({ [FEEDBACK_KEY]: cache });
+            cacheDirty = false;
+            lastFlushAt = Date.now();
+          });
+        }
+        sendResponse({ ok: true });
+      });
       return true;
+    }
 
     case 'SYF_RESET':
+      // Cancel any pending throttled flush so it can't resurrect data after the wipe.
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      cacheDirty = false;
       // Ordered after pending writes so an in-flight save can't resurrect data.
       enqueue(async () => {
         await chrome.storage.local.remove(ALL_STORAGE_KEYS);

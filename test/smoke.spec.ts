@@ -8,13 +8,22 @@ test('extension loads and registers a service worker', async ({ extensionId }) =
 test('options page saves and reloads the API key', async ({ context, extensionId }) => {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/options/options.html`);
-  await page.fill('#apiKey', 'AIzaTEST_dummy_key_123');
-  await page.click('#save');
-  await expect(page.locator('#savedMsg')).toHaveText('Saved');
+  // The dev profile is shared with real use — snapshot the user's key and restore it
+  // afterward so the suite never clobbers a real API key with the test value.
+  const original = await page.locator('#apiKey').inputValue();
+  try {
+    await page.fill('#apiKey', 'AIzaTEST_dummy_key_123');
+    await page.click('#save');
+    await expect(page.locator('#savedMsg')).toHaveText('Saved');
 
-  // Reload and confirm persistence.
-  await page.reload();
-  await expect(page.locator('#apiKey')).toHaveValue('AIzaTEST_dummy_key_123');
+    // Reload and confirm persistence.
+    await page.reload();
+    await expect(page.locator('#apiKey')).toHaveValue('AIzaTEST_dummy_key_123');
+  } finally {
+    await page.fill('#apiKey', original);
+    await page.click('#save');
+    await page.close();
+  }
 });
 
 test('injects the SYF button bar on a watch page', async ({ context }) => {

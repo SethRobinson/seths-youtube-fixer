@@ -32,11 +32,18 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
   **live polymer element data** (`ytd-watch-flexy.data` / `ytd-browse.data` / `ytd-search.data`,
   scoped by `location.pathname`) + hooks `/youtubei/v1/{browse,next,search}` responses (scroll
   continuations) to capture "Not interested" (`feedbackToken`, icon HIDE) and "Don't recommend
-  channel" (icon REMOVE) tokens, keyed by video/channel in the SW cache (`syf.feedback`, 7-day TTL;
-  `unlimitedStorage` + LRU-capped at 2000 videos/2000 channels so it can't hit the 10 MB quota and
-  silently drop captures). The SW keeps cache/log/settings **in memory** (no re-parse per lookup;
-  invalidated on reset). The DR token is stored channel-level only (not duplicated in the video
-  entry) → ~0.8 KB/video. `captureFrom` only pushes new/changed tuples to the SW (per-tick dedup vs
+  channel" (icon REMOVE) tokens, keyed by video/channel in the SW cache (`syf.feedback`, 7-day TTL).
+  Because the manifest has `unlimitedStorage` there is **no** 10 MB `storage.local` quota, so the cache
+  is bounded only by a **user-configurable** LRU cap (`settings.maxCacheVideos`, default **10,000**,
+  configurable **100–50,000** in the options page — applied to BOTH the video and channel maps) plus a
+  **50 MB** byte backstop (`DEFAULT_CACHE_CAP`/`MIN_CACHE_CAP`/`MAX_CACHE_CAP`/`MAX_FEEDBACK_BYTES` in
+  `common/feedback.ts`, shared with the options UI) — both just keep load/save fast. Lowering the cap
+  evicts immediately (on `SYF_PATCH_SETTINGS`), not just on the next capture. The SW keeps cache/log/settings **in memory** (no
+  re-parse per lookup; invalidated on reset). Cache **writes are throttled (≤ once/2 s) and coalesced**,
+  and `mergeCapture` **skips no-op re-sightings** (only a genuinely new/changed token flags a write), so
+  a scroll burst (~160 videos) is a single write — it no longer rewrites the whole blob on every capture.
+  The DR token is stored channel-level only (not duplicated in the video entry) → ~0.8 KB/video.
+  `captureFrom` only pushes new/changed tuples to the SW (per-tick dedup vs
   `videoIndex`). Clicking a video link triggers a **click-time capture** of that exact video
   (`CAPTURE_VIDEO` → bridge `videoIndex`, falling back to the live element data) so fast clicks still
   cache the clicked video. On a watch page, the two feedback buttons light up when a token is
@@ -101,14 +108,14 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     scan/review/delete in a new tab (`wipe.html?minutes=N`) so it doesn't block viewing.
   - **Info** — opens **settings as an in-page dialog** (iframe of `options/options.html`, allowed by
     `web_accessible_resources` for youtube.com; CSP permits it). The options page holds: API key +
-    help, Hide Shorts, feedback TTL, the **action log** (Undo/Redo via `SYF_RELAY_REPLAY` →
+    help, Hide Shorts, feedback TTL, **max cached videos**, the **action log** (Undo/Redo via `SYF_RELAY_REPLAY` →
     `SYF_DO_REPLAY` relayed through a YouTube tab), **Reset data** (`SYF_RESET` clears
     `ALL_STORAGE_KEYS` incl. dismissed warnings), and **credits (Seth A. Robinson / rtsoft.com)**.
     (The standalone `src/log/` page was removed.)
   - **Find in comments** opens settings/options (with a toast) when no API key is set.
   - **Hide Shorts** setting toggles `html.syf-hide-shorts`; CSS hides Shorts shelves/cards/nav (live
-    via `storage.onChanged`). Settings include `hideShorts`, `feedbackTtlDays`, `lastHistoryPaused`,
-    `dismissedWarnings`. No current setting needs a page reload (all apply live).
+    via `storage.onChanged`). Settings include `hideShorts`, `feedbackTtlDays`, `maxCacheVideos`,
+    `lastHistoryPaused`, `dismissedWarnings`. No current setting needs a page reload (all apply live).
 - **Security & known residuals** (from the 2026-06-16 adversarial review; fixes landed for storage
   races, the debug globals, CSP, sender check, and transient-vs-permanent history backoff). Still
   open, low-risk for personal single-account English use — revisit before any wider distribution:

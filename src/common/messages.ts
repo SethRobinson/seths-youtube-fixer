@@ -1,5 +1,5 @@
 // Typed messages between content script, popup, options, and the service worker.
-import { FEEDBACK_KEY, ACTIONLOG_KEY } from './feedback';
+import { FEEDBACK_KEY, ACTIONLOG_KEY, DEFAULT_CACHE_CAP } from './feedback';
 import type { CaptureItem, FeedbackStats, FeedbackType, ActionLogEntry } from './feedback';
 
 export interface NewActionInput {
@@ -94,6 +94,7 @@ export interface SyfSettings {
   wipePresetsMin?: number[];
   confirmBeforeWipe?: boolean;
   feedbackTtlDays?: number; // how long a cached feedback token is considered usable
+  maxCacheVideos?: number; // LRU cap for the feedback cache, applied to both videos and channels
   hideShorts?: boolean; // hide Shorts shelves/cards from feeds
   lastHistoryPaused?: boolean; // cached watch-history state for the bar toggle label
   dismissedWarnings?: Record<string, boolean>; // "don't show again" flags (e.g. { history: true })
@@ -104,6 +105,7 @@ export const DEFAULT_SETTINGS: SyfSettings = {
   wipePresetsMin: [15, 30, 60, 120],
   confirmBeforeWipe: true,
   feedbackTtlDays: 7,
+  maxCacheVideos: DEFAULT_CACHE_CAP,
   hideShorts: false,
 };
 
