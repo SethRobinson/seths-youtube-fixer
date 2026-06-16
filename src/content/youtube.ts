@@ -17,9 +17,9 @@ const HATE_UNAVAIL =
 
 // Shown as a toast when a grayed-out button is clicked.
 const NAH_REASON =
-  'Nah isn’t available for this video yet. YouTube only exposes a real “Not interested” action on recommendation cards — so we can only send it for videos we’ve seen as a card. Browse Home, Search, or the Up-next sidebar until this video appears there, then come back.';
+  '“Hate content” isn’t available for this video yet. YouTube only exposes a real “Not interested” action on recommendation cards — so we can only send it for videos we’ve seen as a card. Browse Home, Search, or the Up-next sidebar until this video appears there, then come back.';
 const HATE_REASON =
-  '“Hate this channel” isn’t available yet. We haven’t captured YouTube’s real “Don’t recommend channel” action for this creator this session. Browse a few of their videos as recommendation cards (Home / Search / Up-next), then return here.';
+  '“Hate channel” isn’t available yet. We haven’t captured YouTube’s real “Don’t recommend channel” action for this creator this session. Browse a few of their videos as recommendation cards (Home / Search / Up-next), then return here.';
 
 interface BtnDef {
   action: string;
@@ -28,15 +28,15 @@ interface BtnDef {
 }
 
 const BUTTONS: BtnDef[] = [
-  { action: 'nah', label: 'Nah', tip: NAH_UNAVAIL },
-  { action: 'hate-channel', label: 'Hate this channel', tip: HATE_UNAVAIL },
+  { action: 'nah', label: 'Hate content', tip: NAH_UNAVAIL },
+  { action: 'hate-channel', label: 'Hate channel', tip: HATE_UNAVAIL },
   { action: 'wipe', label: 'Wipe history', tip: 'Delete recent YouTube activity via My Activity.' },
   { action: 'find-comments', label: 'Find in comments', tip: 'Search all public comments and replies.' },
   { action: 'info', label: 'ℹ Info', tip: 'View and undo your feedback actions.' },
 ];
 
-const LABELS: Record<string, string> = { nah: 'Nah', 'hate-channel': 'Hate this channel' };
-const SENT_LABELS: Record<string, string> = { nah: 'Nah ✓', 'hate-channel': 'Channel hidden ✓' };
+const LABELS: Record<string, string> = { nah: 'Hate content', 'hate-channel': 'Hate channel' };
+const SENT_LABELS: Record<string, string> = { nah: 'Content hidden ✓', 'hate-channel': 'Channel hidden ✓' };
 
 interface ActionState {
   token?: string;

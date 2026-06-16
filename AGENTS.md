@@ -31,9 +31,11 @@ cached endpoint exists for that video/channel.
   tokens, keyed by video/channel in the SW cache (`syf.feedback`, 7-day TTL). On a watch
   page, Nah/Hate light up when a token is cached. **Clicks are DRY-RUN — nothing is POSTed
   yet.** Measure with `node scripts/measure-feedback.mjs`.
-  - Coverage note: modern home cards are mostly `lockupViewModel` (no inline tokens), so only
-    a subset of home videos yield tokens; coverage grows across surfaces (search, up-next).
-    channelId isn't always in the renderer — video-level token is the reliable fallback.
+  - Coverage (fixed 2026-06-16): the extractor now handles BOTH classic (`videoId`+`menu`) and the
+    new `lockupViewModel` cards (`contentId` + `rendererContext.commandContext.onTap.innertubeCommand
+    .feedbackEndpoint`). Tokens are inline in the feed — no need to open menus (confirmed all 70 home
+    lockups carry them). ~160 videos / ~118 channels captured per home browse+scroll (was ~12/3).
+    Classify by icon `HIDE`/`REMOVE` or label; channelId = first `UC…`(24) string in the node.
 - **Feature 1b — replay VALIDATED:** `POST /youtubei/v1/feedback` with the cached token works.
   Auth = `Authorization: SAPISIDHASH <ts>_<sha1(ts SAPISID origin)>` + `X-Goog-AuthUser`,
   `X-Origin`, innertube context/client from `ytcfg`. A home-feed token replayed on the watch

@@ -36,40 +36,78 @@ function findUndoToken(node: any, d = 0): string | undefined {
   return undefined;
 }
 
-function classifyMenu(menu: any): {
+// Label/icon work for both classic (text.runs / icon.iconType) and the new
+// lockup view-model (title.content / leadingImage…clientResource.imageName).
+function labelOf(o: any): string {
+  return (o?.title?.content || textOf(o?.text) || '').toLowerCase();
+}
+function iconOf(o: any): string {
+  return o?.leadingImage?.sources?.[0]?.clientResource?.imageName || o?.icon?.iconType || '';
+}
+
+// Find the feedbackEndpoint (carrying feedbackToken) inside a menu item — handles
+// classic serviceEndpoint.feedbackEndpoint and lockup
+// rendererContext.commandContext.onTap.innertubeCommand.feedbackEndpoint.
+function findFeedbackEndpoint(o: any, d = 0): any {
+  if (!o || typeof o !== 'object' || d > 8) return null;
+  if (o.feedbackEndpoint && typeof o.feedbackEndpoint.feedbackToken === 'string') return o.feedbackEndpoint;
+  if (typeof o.feedbackToken === 'string') return o;
+  for (const k of Object.keys(o)) {
+    const r = findFeedbackEndpoint(o[k], d + 1);
+    if (r) return r;
+  }
+  return null;
+}
+
+// Walk a card/menu container for "Not interested" / "Don't recommend channel"
+// items (works regardless of classic vs lockup shape).
+function classify(container: any): {
   notInterestedToken?: string;
   notInterestedUndoToken?: string;
   dontRecommendChannelToken?: string;
   dontRecommendChannelUndoToken?: string;
 } {
-  const res: ReturnType<typeof classifyMenu> = {};
-  const items = menu?.menuRenderer?.items;
-  if (!Array.isArray(items)) return res;
-  for (const it of items) {
-    const mi = it.menuServiceItemRenderer;
-    const fe = mi?.serviceEndpoint?.feedbackEndpoint;
-    const token = fe?.feedbackToken;
-    if (!token) continue;
-    const undo = findUndoToken(fe);
-    const icon = mi.icon?.iconType;
-    const label = (textOf(mi.text) || '').toLowerCase();
-    if (icon === 'HIDE' || label.includes('not interested')) {
-      res.notInterestedToken = token;
-      res.notInterestedUndoToken = undo;
-    } else if (icon === 'REMOVE' || label.includes("don't recommend") || label.includes('dont recommend')) {
-      res.dontRecommendChannelToken = token;
-      res.dontRecommendChannelUndoToken = undo;
+  const res: ReturnType<typeof classify> = {};
+  const seen = new WeakSet<object>();
+  (function walk(o: any, d: number) {
+    if (!o || typeof o !== 'object' || d > 22) return;
+    if (seen.has(o)) return;
+    seen.add(o);
+    if (Array.isArray(o)) {
+      for (const x of o) walk(x, d + 1);
+      return;
     }
-  }
+    const label = labelOf(o);
+    const icon = iconOf(o);
+    if (label || icon) {
+      const fe = findFeedbackEndpoint(o, 0);
+      if (fe && typeof fe.feedbackToken === 'string') {
+        if (icon === 'HIDE' || label.includes('not interested')) {
+          if (!res.notInterestedToken) {
+            res.notInterestedToken = fe.feedbackToken;
+            res.notInterestedUndoToken = findUndoToken(fe);
+          }
+        } else if (icon === 'REMOVE' || label.includes("don't recommend") || label.includes('dont recommend')) {
+          if (!res.dontRecommendChannelToken) {
+            res.dontRecommendChannelToken = fe.feedbackToken;
+            res.dontRecommendChannelUndoToken = findUndoToken(fe);
+          }
+        }
+        return; // matched item — don't descend further into it
+      }
+    }
+    for (const k of Object.keys(o)) walk(o[k], d + 1);
+  })(container, 0);
   return res;
 }
 
+// Channel id = a "UC…" 24-char string anywhere in the node.
 function findChannelId(node: any, d = 0): string | undefined {
-  if (!node || typeof node !== 'object' || d > 5) return undefined;
-  const bid = node.browseEndpoint?.browseId;
-  if (typeof bid === 'string' && bid.startsWith('UC')) return bid;
+  if (!node || typeof node !== 'object' || d > 12) return undefined;
   for (const k of Object.keys(node)) {
-    const r = findChannelId(node[k], d + 1);
+    const v = node[k];
+    if (typeof v === 'string' && /^UC[0-9A-Za-z_-]{22}$/.test(v)) return v;
+    const r = findChannelId(v, d + 1);
     if (r) return r;
   }
   return undefined;
@@ -77,35 +115,55 @@ function findChannelId(node: any, d = 0): string | undefined {
 
 function bylineChannel(node: any): { channelName?: string; channelId?: string } {
   const channelName = textOf(node?.longBylineText) || textOf(node?.ownerText) || textOf(node?.shortBylineText);
-  const channelId =
-    findChannelId(node?.longBylineText) ||
-    findChannelId(node?.ownerText) ||
-    findChannelId(node?.shortBylineText) ||
-    findChannelId(node?.channelThumbnailSupportedRenderers) ||
-    findChannelId(node?.channelThumbnail);
-  return { channelName, channelId };
+  return { channelName, channelId: findChannelId(node) };
+}
+
+function lockupTitle(lv: any): string | undefined {
+  return lv?.metadata?.lockupMetadataViewModel?.title?.content;
 }
 
 function extractTuples(root: any): any[] {
   const out: any[] = [];
   const seen = new WeakSet<object>();
   (function walk(o: any, d: number) {
-    if (!o || typeof o !== 'object' || d > 40) return;
+    if (!o || typeof o !== 'object' || d > 45) return;
     if (seen.has(o)) return;
     seen.add(o);
     if (Array.isArray(o)) {
       for (const v of o) walk(v, d + 1);
       return;
     }
+
+    let videoId: string | undefined;
+    let container: any;
+    let channel: { channelName?: string; channelId?: string } = {};
+    let title: string | undefined;
+
     if (typeof o.videoId === 'string' && o.videoId.length === 11 && o.menu) {
-      const c = classifyMenu(o.menu);
+      videoId = o.videoId;
+      container = o.menu;
+      channel = bylineChannel(o);
+      title = textOf(o.title);
+    } else if (
+      o.lockupViewModel &&
+      typeof o.lockupViewModel.contentId === 'string' &&
+      o.lockupViewModel.contentId.length === 11
+    ) {
+      const lv = o.lockupViewModel;
+      videoId = lv.contentId;
+      container = lv;
+      channel = { channelId: findChannelId(lv) };
+      title = lockupTitle(lv);
+    }
+
+    if (videoId && container) {
+      const c = classify(container);
       if (c.notInterestedToken || c.dontRecommendChannelToken) {
-        const { channelName, channelId } = bylineChannel(o);
         out.push({
-          videoId: o.videoId,
-          channelId,
-          channelName,
-          title: textOf(o.title),
+          videoId,
+          channelId: channel.channelId,
+          channelName: channel.channelName,
+          title,
           notInterestedToken: c.notInterestedToken,
           notInterestedUndoToken: c.notInterestedUndoToken,
           dontRecommendChannelToken: c.dontRecommendChannelToken,
