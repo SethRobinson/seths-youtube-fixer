@@ -204,3 +204,79 @@
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* --- wipe dialog --- */
+.syf-wipe-body {
+  padding: 14px 16px;
+  overflow-y: auto;
+}
+.syf-wipe-note {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 12px;
+  opacity: 0.9;
+}
+.syf-wipe-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.syf-wipe-custom {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.syf-wipe-custom input {
+  width: 70px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  color: inherit;
+}
+.syf-wipe-loading,
+.syf-wipe-done,
+.syf-wipe-error {
+  font-size: 13px;
+  padding: 16px 4px;
+  line-height: 1.5;
+}
+.syf-wipe-done {
+  color: #2ba640;
+}
+.syf-wipe-error {
+  color: #ff8a80;
+}
+.syf-wipe-list {
+  max-height: 38vh;
+  overflow-y: auto;
+  margin: 4px 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+.syf-wipe-item {
+  font-size: 12px;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.syf-wipe-t {
+  display: inline-block;
+  min-width: 62px;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+.syf-wipe-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.syf-wipe-delete {
+  background: #cc0000 !important;
+  color: #fff !important;
+}
+.syf-wipe-delete:hover {
+  background: #e02020 !important;
+}

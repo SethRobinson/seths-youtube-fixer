@@ -26,6 +26,12 @@
       "css": ["content/styles.css"],
       "run_at": "document_idle",
       "world": "ISOLATED"
+    },
+    {
+      "matches": ["https://myactivity.google.com/*"],
+      "js": ["content/myactivity.js"],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
     }
   ],
   "action": {

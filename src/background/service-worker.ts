@@ -78,6 +78,62 @@ function mergeCapture(cache: FeedbackCache, items: CaptureItem[]): boolean {
   return changed;
 }
 
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const MA_URL = 'https://myactivity.google.com/product/youtube';
+
+function waitTabComplete(tabId: number, timeoutMs = 25_000): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    };
+    const listener = (id: number, info: { status?: string }) => {
+      if (id === tabId && info.status === 'complete') done();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    setTimeout(done, timeoutMs);
+  });
+}
+
+async function sendToTab(tabId: number, message: SyfMessage, tries = 8): Promise<any> {
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await chrome.tabs.sendMessage(tabId, message);
+    } catch {
+      await delay(700); // content script may not be ready yet
+    }
+  }
+  throw new Error('My Activity content script did not respond');
+}
+
+async function handleWipe(mode: 'scan' | 'delete', startMs: number, endMs: number): Promise<any> {
+  let tabId: number | undefined;
+  try {
+    // Always use our own fresh background tab so our content script is active.
+    const tab = await chrome.tabs.create({ url: MA_URL, active: false });
+    tabId = tab.id!;
+    await waitTabComplete(tabId);
+    await delay(5000); // let the SPA render the activity list
+    const maMsg: SyfMessage =
+      mode === 'scan'
+        ? { type: 'SYF_MA_SCAN', startMs, endMs }
+        : { type: 'SYF_MA_DELETE', startMs, endMs };
+    const res = await sendToTab(tabId, maMsg);
+    return res ?? { ok: false, mode, matched: [], error: 'no response' };
+  } catch (e) {
+    return { ok: false, mode, matched: [], error: String(e) };
+  } finally {
+    if (tabId) {
+      try {
+        await chrome.tabs.remove(tabId);
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) => {
   switch (msg?.type) {
     case 'SYF_PING':
@@ -163,6 +219,10 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
 
     case 'SYF_GET_LOG':
       loadLog().then((log) => sendResponse({ ok: true, log }));
+      return true;
+
+    case 'SYF_WIPE':
+      handleWipe(msg.mode, msg.startMs, msg.endMs).then(sendResponse);
       return true;
 
     case 'SYF_STATS':

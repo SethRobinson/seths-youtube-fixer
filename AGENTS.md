@@ -56,12 +56,25 @@ cached endpoint exists for that video/channel.
   - Verified net-neutral via `scripts/{test-toggle-log,test-native,test-undo,validate-replay}.mjs`.
   - NOTE: bridge exposes `window.__syfDebug` (tokenIndex peek) for tests — gate/remove before any
     wider distribution (a page script could read a cached feedback token).
-- **Open / next options:** (a) Feature 2 — Wipe history (My Activity); (b) Feature 3 — Comment
-  search (YouTube Data API); (c) more Feature 1 coverage (lockupViewModel tokens), exercise Hate
-  end-to-end, aged/cross-session replay.
+- **UX:** grayed Nah/Hate buttons stay clickable — clicking a grayed one shows a toast explaining
+  why it's unavailable (`showToast`). Buttons: Nah · Hate this channel · Wipe history · Find in
+  comments · ℹ Info.
+- **Feature 2 — Wipe history (scan + UI DONE; delete built, NOT yet validated):**
+  - `src/content/myactivity.ts` runs on myactivity.google.com: pairs each "Delete activity item"
+    button with the timestamp preceding it in document order (handles grouped times), filters to a
+    window. SW (`handleWipe`) opens a fresh background My Activity tab, relays `SYF_MA_SCAN`/
+    `SYF_MA_DELETE`, then closes the tab. Watch-page dialog: presets (15/30/60/120 + custom) →
+    **scan → review the exact item list + window times → red Delete** (gated). Scan verified
+    (`test-wipe-scan`, `test-wipe-ui`). **The irreversible per-item delete-click is NOT yet
+    exercised** — validate on a tiny window with the user's OK before trusting it.
+  - Caveat: timestamps are minute-precision, assumed "today" (yesterday if the time is in the
+    future). Deletion re-scans after each click (DOM mutates).
+- **Open / next options:** validate the real delete (small window); Feature 3 — Comment search
+  (needs API key); more Feature 1 coverage (lockupViewModel), Hate end-to-end, aged replay.
 
-Dev/test scripts in `scripts/`: recon-feedback, recon-undo, measure-feedback, validate-replay,
-test-click, test-undo, test-toggle-log, test-native, diag.
+Dev/test scripts in `scripts/`: recon-feedback, recon-undo, recon-myactivity(2), measure-feedback,
+validate-replay, test-click, test-undo, test-toggle-log, test-native, test-toast, test-wipe-scan,
+test-wipe-ui, debug-ma, diag.
 
 ## Layout
 

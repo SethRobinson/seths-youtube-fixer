@@ -12,6 +12,7 @@ const watch = process.argv.includes('--watch');
 const entryPoints = {
   'background/service-worker': 'src/background/service-worker.ts',
   'content/youtube': 'src/content/youtube.ts',
+  'content/myactivity': 'src/content/myactivity.ts',
   'content/page-bridge': 'src/content/page-bridge.ts',
   'options/options': 'src/options/options.ts',
   'popup/popup': 'src/popup/popup.ts',

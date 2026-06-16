@@ -24,7 +24,24 @@ export type SyfMessage =
       id?: string;
       match?: { type: FeedbackType; videoId?: string; channelId?: string };
     }
-  | { type: 'SYF_GET_LOG' };
+  | { type: 'SYF_GET_LOG' }
+  | { type: 'SYF_WIPE'; mode: 'scan' | 'delete'; startMs: number; endMs: number }
+  | { type: 'SYF_MA_SCAN'; startMs: number; endMs: number }
+  | { type: 'SYF_MA_DELETE'; startMs: number; endMs: number };
+
+export interface WipeItem {
+  title: string;
+  timeText: string;
+  ms: number;
+}
+
+export interface WipeResult {
+  ok: boolean;
+  mode: 'scan' | 'delete';
+  matched: WipeItem[];
+  deleted?: number;
+  error?: string;
+}
 
 export interface ActiveAction {
   id: string;
