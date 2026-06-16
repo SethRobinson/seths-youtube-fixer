@@ -9,7 +9,7 @@ import {
   type CaptureItem,
   type ActionLogEntry,
 } from '../common/feedback';
-import type { SyfMessage } from '../common/messages';
+import { SETTINGS_KEY, DEFAULT_SETTINGS, type SyfMessage, type SyfSettings } from '../common/messages';
 
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('[SYF] installed:', details.reason);
@@ -22,6 +22,10 @@ async function loadCache(): Promise<FeedbackCache> {
 async function loadLog(): Promise<ActionLogEntry[]> {
   const o = await chrome.storage.local.get(ACTIONLOG_KEY);
   return (o[ACTIONLOG_KEY] as ActionLogEntry[]) ?? [];
+}
+async function loadSettings(): Promise<SyfSettings> {
+  const o = await chrome.storage.local.get(SETTINGS_KEY);
+  return { ...DEFAULT_SETTINGS, ...((o[SETTINGS_KEY] as SyfSettings) ?? {}) };
 }
 
 // Serialize storage writes so concurrent messages don't clobber each other.
@@ -154,13 +158,14 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
       return false;
 
     case 'SYF_LOOKUP':
-      Promise.all([loadCache(), loadLog()]).then(([c, log]) => {
+      Promise.all([loadCache(), loadLog(), loadSettings()]).then(([c, log, settings]) => {
+        const ttlMs = (settings.feedbackTtlDays ?? 7) * 86_400_000;
         const v = c.videos[msg.videoId];
         const ch = msg.channelId ? c.channels[msg.channelId] : undefined;
         const hateEntry =
-          ch && isFresh(ch.dontRecommendChannel)
+          ch && isFresh(ch.dontRecommendChannel, ttlMs)
             ? ch.dontRecommendChannel
-            : v && isFresh(v.dontRecommendChannel)
+            : v && isFresh(v.dontRecommendChannel, ttlMs)
               ? v.dontRecommendChannel
               : undefined;
         const nahA = log.find((e) => !e.undone && e.type === 'notInterested' && e.videoId === msg.videoId);
@@ -172,10 +177,10 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
         );
         sendResponse({
           ok: true,
-          nah: !!(v && isFresh(v.notInterested)),
+          nah: !!(v && isFresh(v.notInterested, ttlMs)),
           hate: !!hateEntry,
           videoKnown: !!v,
-          nahToken: v && isFresh(v.notInterested) ? v.notInterested!.token : undefined,
+          nahToken: v && isFresh(v.notInterested, ttlMs) ? v.notInterested!.token : undefined,
           nahUndoToken: v?.notInterested?.undoToken,
           hateToken: hateEntry?.token,
           hateUndoToken: hateEntry?.undoToken,

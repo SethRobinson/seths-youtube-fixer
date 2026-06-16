@@ -77,10 +77,12 @@ export interface SyfSettings {
   apiKey?: string;
   wipePresetsMin?: number[];
   confirmBeforeWipe?: boolean;
+  feedbackTtlDays?: number; // how long a cached feedback token is considered usable
 }
 
 export const DEFAULT_SETTINGS: SyfSettings = {
   apiKey: '',
   wipePresetsMin: [15, 30, 60, 120],
   confirmBeforeWipe: true,
+  feedbackTtlDays: 7,
 };

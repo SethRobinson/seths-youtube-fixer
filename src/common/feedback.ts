@@ -81,6 +81,6 @@ export function emptyCache(): FeedbackCache {
   };
 }
 
-export function isFresh(t: CachedToken | undefined): boolean {
-  return !!t && Date.now() - t.capturedAt < FEEDBACK_TTL_MS;
+export function isFresh(t: CachedToken | undefined, ttlMs: number = FEEDBACK_TTL_MS): boolean {
+  return !!t && Date.now() - t.capturedAt < ttlMs;
 }
