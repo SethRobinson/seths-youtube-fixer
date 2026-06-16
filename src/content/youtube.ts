@@ -411,7 +411,25 @@ async function refreshAvailability(): Promise<void> {
     renderButton('nah');
     renderButton('hate-channel');
   } catch {
-    /* SW waking; next schedule() retries */
+    notifyIfContextLost(); // SW waking is fine; an orphaned context is not
+  }
+}
+
+// After the extension is updated/reloaded, content scripts in already-open tabs
+// are orphaned — chrome.runtime calls throw "context invalidated" and the buttons
+// can never light up. Detect that and tell the user to reload (instead of failing
+// silently). Common in dev because of frequent reloads.
+let contextLostNotified = false;
+function notifyIfContextLost(): void {
+  let valid = true;
+  try {
+    valid = !!chrome.runtime?.id;
+  } catch {
+    valid = false;
+  }
+  if (!valid && !contextLostNotified) {
+    contextLostNotified = true;
+    showToast('Seth’s YouTube Fixer was updated — reload this page (Ctrl+R) to reconnect. Buttons won’t work until you do.');
   }
 }
 
