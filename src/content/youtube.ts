@@ -1,10 +1,15 @@
-// Isolated-world content script: detects YouTube SPA navigation, finds the
-// watch-page mount point, and injects the Seth's YouTube Fixer button bar.
-// Buttons are placeholders in this iteration; per-feature wiring lands next.
-import type { SyfMessage } from '../common/messages';
+// Isolated-world content script: injects the button bar, forwards captures from
+// the MAIN-world bridge to the service worker, and reflects feedback availability
+// on the watch page. Nah / Hate clicks are DRY-RUN for now (nothing is submitted).
+import type { SyfMessage, LookupResult } from '../common/messages';
 
 const TAG = '[SYF]';
 const BAR_ID = 'syf-bar';
+
+const NAH_UNAVAIL =
+  'Not available yet — this video hasn’t been seen as a recommendation card with YouTube’s real feedback action.';
+const HATE_UNAVAIL =
+  'YouTube hasn’t exposed a real “Don’t recommend channel” action for this creator in this session yet.';
 
 interface BtnDef {
   action: string;
@@ -13,37 +18,46 @@ interface BtnDef {
 }
 
 const BUTTONS: BtnDef[] = [
-  {
-    action: 'nah',
-    label: 'Nah',
-    tip: 'Not available yet — this video has not been seen as a recommendation card with YouTube’s real feedback action.',
-  },
-  {
-    action: 'hate-channel',
-    label: 'Hate this channel',
-    tip: 'YouTube has not exposed a real “Don’t recommend channel” action for this creator in this session yet.',
-  },
-  {
-    action: 'wipe',
-    label: 'Wipe history',
-    tip: 'Delete recent YouTube activity from your Google account via My Activity.',
-  },
-  {
-    action: 'find-comments',
-    label: 'Find in comments',
-    tip: 'Search all public comments and replies on this video.',
-  },
+  { action: 'nah', label: 'Nah', tip: NAH_UNAVAIL },
+  { action: 'hate-channel', label: 'Hate this channel', tip: HATE_UNAVAIL },
+  { action: 'wipe', label: 'Wipe history', tip: 'Delete recent YouTube activity from your Google account via My Activity.' },
+  { action: 'find-comments', label: 'Find in comments', tip: 'Search all public comments and replies on this video.' },
 ];
+
+const buttons: Record<string, HTMLButtonElement> = {};
+let current: { videoId?: string; channelId?: string; channelName?: string; title?: string } = {};
 
 function getVideoId(): string | null {
   const u = new URL(location.href);
-  if (u.pathname === '/watch') return u.searchParams.get('v');
-  return null;
+  return u.pathname === '/watch' ? u.searchParams.get('v') : null;
+}
+
+// --- button state helpers ---
+function setEnabled(btn: HTMLButtonElement, tip: string): void {
+  btn.disabled = false;
+  btn.dataset.state = 'ready';
+  btn.title = tip;
+}
+function setDisabled(btn: HTMLButtonElement, tip: string): void {
+  btn.disabled = true;
+  btn.dataset.state = 'disabled';
+  btn.title = tip;
 }
 
 function onClick(action: string): void {
-  // Per-feature behavior is wired up in later iterations.
-  console.log(TAG, 'click:', action);
+  const btn = buttons[action];
+  if (action === 'nah' || action === 'hate-channel') {
+    // DRY RUN — capture/availability phase. Real submission lands in the next iteration.
+    console.log(TAG, 'DRY-RUN: would submit', action, 'for', current);
+    btn.dataset.state = 'sent';
+    btn.textContent = action === 'nah' ? 'Nah ✓ (dry-run)' : 'Hated ✓ (dry-run)';
+    setTimeout(() => {
+      btn.dataset.state = 'ready';
+      btn.textContent = action === 'nah' ? 'Nah' : 'Hate this channel';
+    }, 2500);
+    return;
+  }
+  console.log(TAG, 'click:', action, '(not wired yet)');
 }
 
 function buildBar(): HTMLElement {
@@ -63,16 +77,16 @@ function buildBar(): HTMLElement {
     btn.dataset.state = 'disabled';
     btn.textContent = def.label;
     btn.title = def.tip;
-    btn.disabled = true; // placeholder until each feature is wired up
+    btn.disabled = true;
     btn.addEventListener('click', () => onClick(def.action));
     bar.appendChild(btn);
+    buttons[def.action] = btn;
   }
   return bar;
 }
 
 function findMount(): HTMLElement | null {
-  const selectors = ['ytd-watch-metadata', '#above-the-fold', '#primary-inner'];
-  for (const s of selectors) {
+  for (const s of ['ytd-watch-metadata', '#above-the-fold', '#primary-inner']) {
     const el = document.querySelector<HTMLElement>(s);
     if (el) return el;
   }
@@ -83,25 +97,73 @@ function removeBar(): void {
   document.getElementById(BAR_ID)?.remove();
 }
 
+async function refreshAvailability(): Promise<void> {
+  const videoId = getVideoId();
+  const nah = buttons['nah'];
+  const hate = buttons['hate-channel'];
+  if (!nah || !hate) return;
+  if (!videoId) {
+    setDisabled(nah, NAH_UNAVAIL);
+    setDisabled(hate, HATE_UNAVAIL);
+    return;
+  }
+  try {
+    const msg: SyfMessage = { type: 'SYF_LOOKUP', videoId, channelId: current.channelId };
+    const r = (await chrome.runtime.sendMessage(msg)) as LookupResult | undefined;
+    if (r?.nah) setEnabled(nah, 'Send YouTube’s real “Not interested” for this video (cached). Dry-run for now.');
+    else setDisabled(nah, NAH_UNAVAIL);
+    if (r?.hate) setEnabled(hate, 'Send YouTube’s real “Don’t recommend channel” (cached). Dry-run for now.');
+    else setDisabled(hate, HATE_UNAVAIL);
+  } catch {
+    /* SW may be waking; next schedule() retries */
+  }
+}
+
 function ensureBar(): void {
   const videoId = getVideoId();
   if (!videoId) {
     removeBar();
+    current = {};
     return;
   }
-  if (document.getElementById(BAR_ID)) return;
+  if (videoId !== current.videoId) current = { videoId }; // reset channel on video change
 
-  const mount = findMount();
-  if (!mount) return;
-
-  mount.prepend(buildBar());
-  console.log(TAG, 'bar injected for video', videoId);
-
-  const msg: SyfMessage = { type: 'SYF_INJECTED', videoId };
-  chrome.runtime?.sendMessage?.(msg).catch(() => {});
+  if (!document.getElementById(BAR_ID)) {
+    const mount = findMount();
+    if (!mount) return;
+    mount.prepend(buildBar());
+    console.log(TAG, 'bar injected for video', videoId);
+    const msg: SyfMessage = { type: 'SYF_INJECTED', videoId };
+    chrome.runtime?.sendMessage?.(msg).catch(() => {});
+  }
+  void refreshAvailability();
 }
 
-// --- SPA-aware scheduling -------------------------------------------------
+// --- messages from the MAIN-world bridge ---
+window.addEventListener('message', (e: MessageEvent) => {
+  if (e.source !== window) return;
+  const d = e.data;
+  if (!d || d.__syf !== true || d.dir !== 'from-page') return;
+  switch (d.type) {
+    case 'CAPTURE': {
+      const msg: SyfMessage = { type: 'SYF_CAPTURE', items: d.items };
+      chrome.runtime?.sendMessage?.(msg).catch(() => {});
+      break;
+    }
+    case 'WATCH_CONTEXT': {
+      current = {
+        videoId: d.videoId,
+        channelId: d.channelId,
+        channelName: d.channelName,
+        title: d.title,
+      };
+      void refreshAvailability();
+      break;
+    }
+  }
+});
+
+// --- SPA-aware scheduling ---
 let scheduled = false;
 function schedule(): void {
   if (scheduled) return;
@@ -114,10 +176,8 @@ function schedule(): void {
 
 const observer = new MutationObserver(() => schedule());
 observer.observe(document.documentElement, { childList: true, subtree: true });
-
 window.addEventListener('yt-navigate-finish', schedule);
 document.addEventListener('yt-navigate-finish', schedule);
 window.addEventListener('yt-page-data-updated', schedule);
-setInterval(schedule, 3000); // low-frequency fallback for missed mutations
-
+setInterval(schedule, 3000);
 schedule();

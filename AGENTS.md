@@ -23,11 +23,20 @@ cached endpoint exists for that video/channel.
 
 ## Status
 
-- **Phase 0 — DONE:** Scaffold + dynamic CDP test harness. The 4-button bar injects on
-  watch pages (buttons are disabled placeholders until each feature is wired). Verified
-  end-to-end in real Chrome via `npm run drive`.
-- **Next:** Feature 1 — Nah / Hate this channel capture + replay, instrumented to measure
-  the feedback-token replay hit-rate (the design's biggest risk).
+- **Phase 0 — DONE:** Scaffold + dynamic CDP test harness. 4-button bar injects on watch
+  pages. Verified end-to-end via `npm run drive`.
+- **Feature 1a — DONE (capture + availability, dry-run clicks):** The MAIN-world bridge
+  parses `ytInitialData` + hooks `/youtubei/v1/{browse,next,search}` responses to capture
+  "Not interested" (`feedbackToken`, icon HIDE) and "Don't recommend channel" (icon REMOVE)
+  tokens, keyed by video/channel in the SW cache (`syf.feedback`, 7-day TTL). On a watch
+  page, Nah/Hate light up when a token is cached. **Clicks are DRY-RUN — nothing is POSTed
+  yet.** Measure with `node scripts/measure-feedback.mjs`.
+  - Coverage note: modern home cards are mostly `lockupViewModel` (no inline tokens), so only
+    a subset of home videos yield tokens; coverage grows across surfaces (search, up-next).
+    channelId isn't always in the renderer — video-level token is the reliable fallback.
+- **Next:** Feature 1b — real feedback POST (`/youtubei/v1/feedback`, needs SAPISIDHASH auth
+  header), gated on first verifying a replayed token actually registers (mutates the real
+  account, so test deliberately). Then improve coverage + add Undo.
 
 ## Layout
 

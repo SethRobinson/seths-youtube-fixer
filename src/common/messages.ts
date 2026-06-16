@@ -1,13 +1,24 @@
-// Typed messages exchanged between content script, popup, options, and the
-// background service worker. Extend this union as features land.
+// Typed messages between content script, popup, options, and the service worker.
+import type { CaptureItem, FeedbackStats } from './feedback';
 
 export type SyfMessage =
   | { type: 'SYF_PING' }
-  | { type: 'SYF_INJECTED'; videoId: string };
+  | { type: 'SYF_INJECTED'; videoId: string }
+  | { type: 'SYF_CAPTURE'; items: CaptureItem[] }
+  | { type: 'SYF_LOOKUP'; videoId: string; channelId?: string }
+  | { type: 'SYF_STATS' };
 
-export type SyfResponse =
-  | { ok: true; ts: number }
-  | { ok: false; error: string };
+export interface LookupResult {
+  ok: true;
+  nah: boolean;
+  hate: boolean;
+  videoKnown: boolean;
+}
+
+export interface StatsResult {
+  ok: true;
+  stats: FeedbackStats;
+}
 
 export const SETTINGS_KEY = 'syf.settings';
 
