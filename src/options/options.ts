@@ -31,16 +31,16 @@ async function initSettings() {
 }
 
 $<HTMLButtonElement>('save').addEventListener('click', async () => {
-  const current = await loadSettings();
   const ttl = parseFloat(ttlInput.value);
-  await chrome.storage.local.set({
-    [SETTINGS_KEY]: {
-      ...current,
+  // Serialized merge in the SW so we don't clobber concurrent writers.
+  await chrome.runtime.sendMessage({
+    type: 'SYF_PATCH_SETTINGS',
+    patch: {
       apiKey: apiKey.value.trim(),
       feedbackTtlDays: Number.isFinite(ttl) && ttl > 0 ? ttl : 7,
       hideShorts: hideShorts.checked,
     },
-  });
+  } as SyfMessage);
   savedMsg.textContent = 'Saved';
   setTimeout(() => (savedMsg.textContent = ''), 1500);
 });

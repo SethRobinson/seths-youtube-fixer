@@ -57,11 +57,6 @@ let current: { videoId?: string; channelId?: string; channelName?: string; title
 let settings: SyfSettings = { ...DEFAULT_SETTINGS };
 let historyInfo: { token?: string | null; paused?: boolean | null; found?: boolean } = {};
 
-async function loadSettingsFresh(): Promise<SyfSettings> {
-  const o = await chrome.storage.local.get(SETTINGS_KEY);
-  return { ...DEFAULT_SETTINGS, ...(o[SETTINGS_KEY] ?? {}) };
-}
-
 function applySettings(s: SyfSettings): void {
   settings = s;
   document.documentElement.classList.toggle('syf-hide-shorts', !!s.hideShorts);
@@ -70,7 +65,7 @@ function applySettings(s: SyfSettings): void {
 
 function updateHistoryButton(): void {
   const b = buttons['pause-history'];
-  if (!b) return;
+  if (!b || b.dataset.state === 'loading') return; // don't stomp the "Working…" affordance
   const paused = settings.lastHistoryPaused;
   b.textContent = paused ? '▶ Resume history' : '⏸ Pause history';
   b.title = paused
@@ -102,12 +97,14 @@ function showBackoff(key: string): void {
     </div>`;
   overlay.appendChild(panel);
   document.body.appendChild(overlay);
-  panel.querySelector('#syf-bo-ok')!.addEventListener('click', async () => {
+  panel.querySelector('#syf-bo-ok')!.addEventListener('click', () => {
     if ((panel.querySelector('#syf-bo-dont') as HTMLInputElement).checked) {
-      const cur = await loadSettingsFresh();
-      await chrome.storage.local.set({
-        [SETTINGS_KEY]: { ...cur, dismissedWarnings: { ...(cur.dismissedWarnings || {}), [key]: true } },
-      });
+      chrome.runtime
+        ?.sendMessage?.({
+          type: 'SYF_PATCH_SETTINGS',
+          patch: { dismissedWarnings: { ...(settings.dismissedWarnings || {}), [key]: true } },
+        } as SyfMessage)
+        .catch(() => {});
     }
     overlay.remove();
   });
@@ -129,12 +126,14 @@ async function toggleHistory(): Promise<void> {
     settings = { ...settings, lastHistoryPaused: res.paused };
     updateHistoryButton();
     showToast(res.paused ? 'Watch history paused.' : 'Watch history resumed.');
-  } else if (res?.found === false || res?.error === 'no-token') {
+  } else if (res?.error === 'no-control') {
+    // Genuine: page parsed but the control is gone (YouTube changed its code).
     b.textContent = prev || '⏸ Pause history';
     showBackoff('history');
   } else {
+    // Transient (slow load / signed out / submit failed) — don't cry wolf.
     b.textContent = prev || '⏸ Pause history';
-    showToast('Couldn’t change watch history — try again, or use YouTube’s own settings.');
+    showToast('Couldn’t reach watch history (slow load or signed out?). Try again, or use YouTube’s own settings.');
   }
 }
 chrome.storage.local.get(SETTINGS_KEY).then((o) => applySettings({ ...DEFAULT_SETTINGS, ...(o[SETTINGS_KEY] ?? {}) }));
@@ -506,18 +505,21 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
   }
   if (msg?.type === 'SYF_HISTORY_DO') {
     if (msg.action === 'state') {
-      sendResponse({ ok: true, paused: historyInfo.paused, found: historyInfo.found });
+      sendResponse({ ok: historyInfo.found !== undefined, paused: historyInfo.paused, found: historyInfo.found });
       return false;
     }
     (async () => {
-      for (let i = 0; i < 12 && !historyInfo.found; i++) await new Promise((r) => setTimeout(r, 500));
-      if (!historyInfo.token) {
-        sendResponse({ ok: false, found: false, error: 'no-token' });
-        return;
+      // Poll until the bridge has posted HISTORY_INFO (found becomes true/false).
+      for (let i = 0; i < 16 && historyInfo.found === undefined; i++) await new Promise((r) => setTimeout(r, 500));
+      if (historyInfo.token) {
+        const res = await replay(historyInfo.token, 'apply');
+        const ok = replayOk(res);
+        sendResponse({ ok, found: true, paused: ok ? !historyInfo.paused : historyInfo.paused, error: ok ? undefined : 'submit-failed' });
+      } else if (historyInfo.found === false) {
+        sendResponse({ ok: false, found: false, error: 'no-control' }); // parsed, control truly absent
+      } else {
+        sendResponse({ ok: false, error: 'timeout' }); // page never became ready
       }
-      const res = await replay(historyInfo.token, 'apply');
-      const ok = replayOk(res);
-      sendResponse({ ok, found: true, paused: ok ? !historyInfo.paused : historyInfo.paused, error: ok ? undefined : 'submit-failed' });
     })();
     return true; // async
   }

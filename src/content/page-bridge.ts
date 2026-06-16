@@ -1,7 +1,8 @@
 // MAIN-world bridge: reads YouTube's innertube JSON to capture "Not interested"
 // and "Don't recommend channel" feedback tokens, and reports the current watch
 // video's context. Talks to the isolated content script via window.postMessage.
-// No chrome.* APIs here. Captures only; it never submits feedback (yet).
+// No chrome.* APIs here. It also submits feedback (Nah/Hate/pause-history) on
+// request from the isolated content script via a 'to-page' REPLAY message.
 
 interface BridgeMsg {
   __syf: true;
@@ -323,13 +324,17 @@ async function submitFeedback(token: string): Promise<any> {
   }
 }
 
-// Exposed for controlled validation from the test harness.
-(window as any).__syfSubmitFeedback = submitFeedback;
-(window as any).__syfDebug = {
-  size: () => tokenIndex.size,
-  firstToken: () => tokenIndex.keys().next().value,
-  hasToken: (t: string) => tokenIndex.has(t),
-};
+// Dev-only test hooks. These expose an authenticated account-write primitive and
+// captured tokens to the page, so they are compiled out unless SYF_DEV=1.
+declare const __SYF_DEV__: boolean;
+if (__SYF_DEV__) {
+  (window as any).__syfSubmitFeedback = submitFeedback;
+  (window as any).__syfDebug = {
+    size: () => tokenIndex.size,
+    firstToken: () => tokenIndex.keys().next().value,
+    hasToken: (t: string) => tokenIndex.has(t),
+  };
+}
 
 // Real submission requested by the isolated content script (button UI path).
 window.addEventListener('message', (e: MessageEvent) => {

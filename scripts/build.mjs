@@ -49,6 +49,10 @@ const buildOpts = {
   target: 'chrome120',
   sourcemap: true,
   logLevel: 'info',
+  // Dev-only globals (window.__syfDebug / __syfSubmitFeedback) are compiled out
+  // unless SYF_DEV=1 — they expose an authenticated account-write primitive +
+  // captured tokens to the page, so they must not ship in normal builds.
+  define: { __SYF_DEV__: process.env.SYF_DEV === '1' ? 'true' : 'false' },
 };
 
 await rm(outDir, { recursive: true, force: true });

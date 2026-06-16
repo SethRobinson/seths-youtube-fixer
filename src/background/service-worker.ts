@@ -42,6 +42,15 @@ function enqueue(fn: () => Promise<void>): Promise<void> {
   return writeChain;
 }
 
+// All settings mutations go through one serialized merge so concurrent writers
+// (options page, history toggle, dismissed-warning) can't clobber each other.
+function patchSettings(patch: Partial<SyfSettings>): Promise<void> {
+  return enqueue(async () => {
+    const s = await loadSettings();
+    await chrome.storage.local.set({ [SETTINGS_KEY]: { ...s, ...patch } });
+  });
+}
+
 function mergeCapture(cache: FeedbackCache, items: CaptureItem[]): boolean {
   let changed = false;
   const now = Date.now();
@@ -183,7 +192,8 @@ async function handleHistory(action: 'toggle' | 'state'): Promise<HistoryResult>
   }
 }
 
-chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id) return false; // ignore anything not from our own contexts
   switch (msg?.type) {
     case 'SYF_PING':
       sendResponse({ ok: true, ts: Date.now() });
@@ -293,16 +303,18 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
 
     case 'SYF_HISTORY':
       handleHistory(msg.action).then(async (res) => {
-        if (res.ok && typeof res.paused === 'boolean') {
-          const s = await loadSettings();
-          await chrome.storage.local.set({ [SETTINGS_KEY]: { ...s, lastHistoryPaused: res.paused } });
-        }
+        if (res.ok && typeof res.paused === 'boolean') await patchSettings({ lastHistoryPaused: res.paused });
         sendResponse(res);
       });
       return true;
 
+    case 'SYF_PATCH_SETTINGS':
+      patchSettings(msg.patch).then(() => sendResponse({ ok: true }));
+      return true;
+
     case 'SYF_RESET':
-      chrome.storage.local.remove(ALL_STORAGE_KEYS).then(() => sendResponse({ ok: true }));
+      // Ordered after pending writes so an in-flight save can't resurrect data.
+      enqueue(() => chrome.storage.local.remove(ALL_STORAGE_KEYS)).then(() => sendResponse({ ok: true }));
       return true;
 
     case 'SYF_STATS':

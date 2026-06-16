@@ -1,4 +1,5 @@
 // Typed messages between content script, popup, options, and the service worker.
+import { FEEDBACK_KEY, ACTIONLOG_KEY } from './feedback';
 import type { CaptureItem, FeedbackStats, FeedbackType, ActionLogEntry } from './feedback';
 
 export interface NewActionInput {
@@ -34,6 +35,7 @@ export type SyfMessage =
   | { type: 'SYF_DO_REPLAY'; token: string }
   | { type: 'SYF_HISTORY'; action: 'toggle' | 'state' }
   | { type: 'SYF_HISTORY_DO'; action: 'toggle' | 'state' }
+  | { type: 'SYF_PATCH_SETTINGS'; patch: Partial<SyfSettings> }
   | { type: 'SYF_RESET' };
 
 export interface HistoryResult {
@@ -106,4 +108,4 @@ export const DEFAULT_SETTINGS: SyfSettings = {
 };
 
 // Storage keys cleared by "Reset data for this extension".
-export const ALL_STORAGE_KEYS = ['syf.feedback', 'syf.actionlog', SETTINGS_KEY];
+export const ALL_STORAGE_KEYS = [FEEDBACK_KEY, ACTIONLOG_KEY, SETTINGS_KEY];
