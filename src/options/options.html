@@ -8,56 +8,42 @@
       body {
         font: 14px 'Roboto', Arial, sans-serif;
         max-width: 660px;
-        margin: 24px auto;
+        margin: 20px auto;
         padding: 0 16px 48px;
         color: #0f0f0f;
         background: #fff;
         line-height: 1.5;
       }
       h1 { font-size: 20px; }
-      h2 { font-size: 15px; margin: 28px 0 6px; }
-      label { display: block; margin: 14px 0 4px; font-weight: 600; }
-      input[type='text'] {
-        width: 100%;
-        padding: 8px;
-        border: 1px solid #ccc;
-        border-radius: 8px;
-        box-sizing: border-box;
-        font: inherit;
-      }
-      input[type='number'] {
-        width: 120px;
-        padding: 8px;
-        border: 1px solid #ccc;
-        border-radius: 8px;
-        font: inherit;
-      }
-      .check { display: flex; align-items: flex-start; gap: 8px; margin: 14px 0; }
+      h2 { font-size: 15px; margin: 26px 0 6px; border-top: 1px solid #eee; padding-top: 18px; }
+      label { display: block; margin: 12px 0 4px; font-weight: 600; }
+      input[type='text'] { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font: inherit; }
+      input[type='number'] { width: 120px; padding: 8px; border: 1px solid #ccc; border-radius: 8px; font: inherit; }
+      .check { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; }
       .check input { margin-top: 3px; }
       .check label { margin: 0; }
       small { color: #666; display: block; margin-top: 4px; }
       a { color: #065fd4; }
-      .help {
-        background: #f4f7ff;
-        border: 1px solid #d6e0ff;
-        border-radius: 10px;
-        padding: 12px 16px;
-        margin: 8px 0 4px;
-        font-size: 13px;
-      }
+      .help { background: #f4f7ff; border: 1px solid #d6e0ff; border-radius: 10px; padding: 12px 16px; margin: 8px 0 4px; font-size: 13px; }
       .help ol { margin: 6px 0 0; padding-left: 20px; }
       .help li { margin: 4px 0; }
-      button {
-        margin-top: 24px;
-        padding: 10px 20px;
-        border: none;
-        border-radius: 8px;
-        background: #065fd4;
-        color: #fff;
-        font-weight: 600;
-        cursor: pointer;
-      }
+      button { padding: 9px 18px; border: none; border-radius: 8px; background: #065fd4; color: #fff; font-weight: 600; cursor: pointer; }
+      button.danger { background: #cc0000; }
       .saved { color: #2ba640; margin-left: 12px; font-weight: 600; }
+      .savebar { margin-top: 22px; }
+      /* action log */
+      #logStatus { min-height: 16px; color: #b26a00; font-size: 13px; }
+      .logrow { display: flex; align-items: center; gap: 10px; padding: 8px 2px; border-bottom: 1px solid #eee; }
+      .logmeta { flex: 1; min-width: 0; }
+      .logtitle { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .logsub { font-size: 11px; color: #666; margin-top: 2px; }
+      .logrow.undone .logtitle { text-decoration: line-through; opacity: 0.6; }
+      .src { text-transform: uppercase; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; }
+      .src-app { background: #cfe5ff; }
+      .src-native { background: #ffe6b0; }
+      .logbtn { border: 1px solid #ccc; background: #fff; color: #0f0f0f; border-radius: 16px; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+      .empty { color: #888; padding: 16px 2px; }
+      footer { margin-top: 32px; border-top: 1px solid #eee; padding-top: 14px; font-size: 12px; color: #666; }
     </style>
   </head>
   <body>
@@ -70,29 +56,41 @@
     <div class="help">
       <b>How to get a free API key (~3 min):</b>
       <ol>
-        <li>Open the <a id="gcpLink" href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud Console</a> and create a project (or pick an existing one).</li>
-        <li>Go to <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">APIs &amp; Services → Library → YouTube Data API v3</a> and click <b>Enable</b>.</li>
-        <li>Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credentials → Create credentials → API key</a>, then copy the key here.</li>
-        <li>(Optional) Click <b>Restrict key</b> → restrict it to the YouTube Data API v3.</li>
+        <li>Open the <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud Console</a> and create a project (or pick an existing one).</li>
+        <li>Enable the <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">YouTube Data API v3</a>.</li>
+        <li>Create an <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">API key</a> and paste it here.</li>
       </ol>
-      <small>The key is yours and tied to your own Google quota (10,000 units/day — plenty for personal use). A key can’t be obtained automatically; it has to be created in your Google account.</small>
+      <small>The key is tied to your own Google quota (10,000 units/day). A key can’t be obtained automatically — it must be created in your Google account.</small>
     </div>
 
     <h2>Feed</h2>
     <div class="check">
       <input id="hideShorts" type="checkbox" />
-      <label for="hideShorts">Hide Shorts from recommendations<small>Hides Shorts shelves and cards from Home, Search, Subscriptions, and the sidebar. Toggling takes effect immediately.</small></label>
+      <label for="hideShorts">Hide Shorts from recommendations<small>Hides Shorts shelves/cards/nav across Home, Search, Subscriptions, and the sidebar. Applies immediately.</small></label>
     </div>
 
     <h2>Feedback cache</h2>
     <label for="ttlDays">Cached feedback expires after (days)</label>
     <input id="ttlDays" type="number" min="0.1" max="365" step="0.5" />
-    <small>How long a captured “Hate content / channel” token stays usable before it’s ignored. The real server-side limit is unknown — lower this if old tokens start getting rejected. Cache lives in this browser only and survives tab switches and restarts.</small>
+    <small>How long a captured “Hate content / channel” token stays usable. Lower it if old tokens get rejected. Cache lives in this browser only and survives tab switches and restarts.</small>
 
-    <div>
+    <div class="savebar">
       <button id="save">Save</button>
       <span id="savedMsg" class="saved"></span>
     </div>
+
+    <h2>Reset</h2>
+    <small>Deletes this extension’s local data — captured feedback tokens, the action log, and all settings (including any “Don’t show this again” choices). Does not touch your YouTube account.</small>
+    <div style="margin-top: 10px"><button id="reset" class="danger">Reset data for this extension</button></div>
+
+    <h2>Action log</h2>
+    <div id="logStatus"></div>
+    <div id="log"></div>
+
+    <footer>
+      Seth's YouTube Fixer — by <b>Seth A. Robinson</b> · <a href="https://www.rtsoft.com" target="_blank" rel="noopener">rtsoft.com</a>
+    </footer>
+
     <script src="options.js"></script>
   </body>
 </html>

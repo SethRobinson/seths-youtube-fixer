@@ -17,7 +17,6 @@ const entryPoints = {
   'options/options': 'src/options/options.ts',
   'popup/popup': 'src/popup/popup.ts',
   'wipe/wipe': 'src/wipe/wipe.ts',
-  'log/log': 'src/log/log.ts',
 };
 
 const staticFiles = [
@@ -26,7 +25,6 @@ const staticFiles = [
   ['src/options/options.html', 'options/options.html'],
   ['src/popup/popup.html', 'popup/popup.html'],
   ['src/wipe/wipe.html', 'wipe/wipe.html'],
-  ['src/log/log.html', 'log/log.html'],
 ];
 
 async function copyStatic() {

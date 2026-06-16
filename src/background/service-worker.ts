@@ -281,11 +281,8 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
       return false;
 
     case 'SYF_OPEN_PAGE': {
-      const url =
-        msg.page === 'history'
-          ? 'https://www.youtube.com/feed/history'
-          : chrome.runtime.getURL(msg.page === 'wipe' ? 'wipe/wipe.html' : 'log/log.html');
-      chrome.tabs.create({ url });
+      const q = msg.minutes ? `?minutes=${msg.minutes}` : '';
+      chrome.tabs.create({ url: chrome.runtime.getURL('wipe/wipe.html') + q });
       sendResponse({ ok: true });
       return false;
     }

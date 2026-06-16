@@ -76,4 +76,7 @@ async function doDelete(startMs: number, endMs: number, count: number): Promise<
   }
 }
 
-renderPick();
+// If a window was chosen on the in-page dialog, jump straight to scanning.
+const initMin = Number(new URLSearchParams(location.search).get('minutes'));
+if (initMin > 0) void scan(initMin);
+else renderPick();

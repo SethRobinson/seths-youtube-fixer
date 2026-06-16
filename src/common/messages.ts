@@ -29,7 +29,7 @@ export type SyfMessage =
   | { type: 'SYF_MA_SCAN'; startMs: number; endMs: number }
   | { type: 'SYF_MA_DELETE'; startMs: number; endMs: number }
   | { type: 'SYF_OPEN_OPTIONS' }
-  | { type: 'SYF_OPEN_PAGE'; page: 'wipe' | 'log' | 'history' }
+  | { type: 'SYF_OPEN_PAGE'; page: 'wipe'; minutes?: number }
   | { type: 'SYF_RELAY_REPLAY'; token: string }
   | { type: 'SYF_DO_REPLAY'; token: string }
   | { type: 'SYF_HISTORY'; action: 'toggle' | 'state' }

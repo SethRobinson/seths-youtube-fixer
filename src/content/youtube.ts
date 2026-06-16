@@ -258,9 +258,67 @@ async function onToggle(action: 'nah' | 'hate-channel'): Promise<void> {
   }
 }
 
+function openWipePresets(): void {
+  document.getElementById('syf-wipe')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'syf-wipe';
+  overlay.className = 'syf-modal';
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+  const panel = document.createElement('div');
+  panel.className = 'syf-modal-panel';
+  const presets = settings.wipePresetsMin?.length ? settings.wipePresetsMin : [15, 30, 60, 120];
+  panel.innerHTML = `<div class="syf-modal-head"><strong>Wipe recent YouTube activity</strong><button class="syf-modal-close" title="Close">✕</button></div>
+    <div class="syf-wipe-body">
+      <p class="syf-wipe-note">Pick how far back to delete. The next step opens in a new tab — it scans My Activity, which is slow, so it won’t interrupt your viewing here.</p>
+      <div class="syf-wipe-presets">
+        ${presets.map((m) => `<button class="syf-btn syf-wipe-preset" data-min="${m}">Last ${m} min</button>`).join('')}
+        <span class="syf-wipe-custom"><input id="syf-wipe-cmin" type="number" min="1" max="1440" placeholder="custom" /> min
+          <button class="syf-btn" id="syf-wipe-go">Go</button></span>
+      </div>
+    </div>`;
+  panel.querySelector('.syf-modal-close')!.addEventListener('click', () => overlay.remove());
+  const open = (m: number) => {
+    overlay.remove();
+    chrome.runtime?.sendMessage?.({ type: 'SYF_OPEN_PAGE', page: 'wipe', minutes: m } as SyfMessage).catch(() => {});
+  };
+  panel.querySelectorAll('.syf-wipe-preset').forEach((b) =>
+    b.addEventListener('click', () => open(Number((b as HTMLElement).dataset.min)))
+  );
+  const cmin = panel.querySelector('#syf-wipe-cmin') as HTMLInputElement;
+  const go = () => {
+    const v = Number(cmin.value);
+    if (v > 0) open(v);
+  };
+  panel.querySelector('#syf-wipe-go')!.addEventListener('click', go);
+  cmin.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') go();
+  });
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+}
+
+function openSettingsDialog(): void {
+  document.getElementById('syf-settings')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'syf-settings';
+  overlay.className = 'syf-modal';
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+  const panel = document.createElement('div');
+  panel.className = 'syf-modal-panel syf-settings-panel';
+  panel.innerHTML = `<div class="syf-modal-head"><strong>Seth’s YouTube Fixer — settings &amp; log</strong><button class="syf-modal-close" title="Close">✕</button></div>
+    <iframe class="syf-settings-iframe" src="${chrome.runtime.getURL('options/options.html')}"></iframe>`;
+  panel.querySelector('.syf-modal-close')!.addEventListener('click', () => overlay.remove());
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+}
+
 function onClick(action: string): void {
   if (action === 'info') {
-    chrome.runtime?.sendMessage?.({ type: 'SYF_OPEN_PAGE', page: 'log' } as SyfMessage).catch(() => {});
+    openSettingsDialog();
     return;
   }
   if (action === 'nah' || action === 'hate-channel') {
@@ -270,7 +328,7 @@ function onClick(action: string): void {
     return;
   }
   if (action === 'wipe') {
-    chrome.runtime?.sendMessage?.({ type: 'SYF_OPEN_PAGE', page: 'wipe' } as SyfMessage).catch(() => {});
+    openWipePresets();
     return;
   }
   if (action === 'pause-history') {

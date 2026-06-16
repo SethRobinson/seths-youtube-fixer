@@ -304,3 +304,16 @@ html.syf-hide-shorts ytd-pivot-bar-item-renderer:has([tab-title='Shorts']) {
   font-size: 13px;
   margin: 4px 0 14px;
 }
+
+.syf-settings-panel {
+  width: min(760px, 96vw);
+  height: 86vh;
+  max-height: 86vh;
+}
+.syf-settings-iframe {
+  width: 100%;
+  height: calc(86vh - 50px);
+  border: 0;
+  background: #fff;
+  display: block;
+}
