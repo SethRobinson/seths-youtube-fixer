@@ -51,6 +51,16 @@ function patchSettings(patch: Partial<SyfSettings>): Promise<void> {
   });
 }
 
+// Keep the cache bounded (LRU by updatedAt) so it stays fast to load/save.
+const MAX_VIDEOS = 2000;
+const MAX_CHANNELS = 2000;
+function evictOldest(map: Record<string, { updatedAt: number }>, max: number): void {
+  const keys = Object.keys(map);
+  if (keys.length <= max) return;
+  keys.sort((a, b) => (map[a].updatedAt || 0) - (map[b].updatedAt || 0));
+  for (const k of keys.slice(0, keys.length - max)) delete map[k];
+}
+
 function mergeCapture(cache: FeedbackCache, items: CaptureItem[]): boolean {
   let changed = false;
   const now = Date.now();
@@ -92,6 +102,8 @@ function mergeCapture(cache: FeedbackCache, items: CaptureItem[]): boolean {
     }
     v.updatedAt = now;
   }
+  evictOldest(cache.videos, MAX_VIDEOS);
+  evictOldest(cache.channels, MAX_CHANNELS);
   cache.stats.videosTracked = Object.keys(cache.videos).length;
   cache.stats.channelsTracked = Object.keys(cache.channels).length;
   if (changed) cache.stats.lastCaptureAt = now;

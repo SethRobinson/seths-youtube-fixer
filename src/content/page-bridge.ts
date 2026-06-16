@@ -403,12 +403,15 @@ function readHistoryInfo(): void {
 // --- triggers: parse embedded data + watch context after each navigation ---
 function onNavigate(): void {
   let tries = 0;
-  const iv = setInterval(() => {
-    tries++;
+  const tick = () => {
     if ((window as any).ytInitialData) captureFrom((window as any).ytInitialData);
     readWatchContext();
     readHistoryInfo();
-    if (tries >= 6) clearInterval(iv);
+  };
+  tick(); // capture immediately, then retry as the SPA hydrates
+  const iv = setInterval(() => {
+    tick();
+    if (++tries >= 6) clearInterval(iv);
   }, 700);
 }
 

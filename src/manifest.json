@@ -3,7 +3,7 @@
   "name": "Seth's YouTube Fixer",
   "version": "0.1.0",
   "description": "Power-user controls for YouTube: Nah, Hate this channel, fast history wipe, and comment search.",
-  "permissions": ["storage", "scripting", "tabs", "activeTab", "sidePanel"],
+  "permissions": ["storage", "unlimitedStorage", "scripting", "tabs", "activeTab", "sidePanel"],
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://m.youtube.com/*",
