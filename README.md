@@ -99,6 +99,11 @@ See [PRIVACY.md](PRIVACY.md) for the full policy.
 
 ---
 
+## AI Disclosure
+
+This project was developed with significant assistance from AI tools.  I mean, you can still blame me (Seth) for bugs, but I just wanted to mention it.
+
+--
 ## Build it yourself
 
 You need [Node.js](https://nodejs.org/) (18+).

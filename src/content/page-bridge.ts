@@ -405,6 +405,55 @@ function readWatchContext(): void {
 }
 
 // --- watch-history pause/resume token (only present on /feed/history) ---
+
+// Locate the watch-history pause/resume control's feedbackToken by its ICON, which
+// — unlike the label — is language-independent. /feed/history ALSO exposes a
+// DELETE-icon "Clear all watch history" token and ~one null-icon "Remove from watch
+// history" token per listed video; submitting the wrong one would wipe all history
+// or delete a video, so we accept ONLY a pause/play-type icon and skip everything
+// else. State comes from the icon: PAUSE* = currently recording (so the action is
+// "pause"), PLAY*/RESUME* = currently paused. Returns a null token when no such
+// control exists (→ honest backoff, never a wrong-token submit). The nearest icon
+// is threaded down the walk because the feedbackToken sits a few levels below the
+// button's icon (under serviceEndpoint/confirmEndpoint → feedbackEndpoint).
+function findHistoryToggleByIcon(data: any): { token: string | null; paused: boolean | null } {
+  let token: string | null = null;
+  let paused: boolean | null = null;
+  const seen = new WeakSet<object>();
+  (function walk(o: any, d: number, icon: string) {
+    if (token || !o || typeof o !== 'object' || d > 40 || seen.has(o)) return;
+    seen.add(o);
+    if (Array.isArray(o)) {
+      for (const x of o) walk(x, d + 1, icon);
+      return;
+    }
+    const here = String(o.icon?.iconType || o.defaultIcon?.iconType || o.iconType || '').toUpperCase();
+    if (here) icon = here;
+    const ft =
+      o.feedbackEndpoint && typeof o.feedbackEndpoint.feedbackToken === 'string'
+        ? o.feedbackEndpoint.feedbackToken
+        : typeof o.feedbackToken === 'string'
+          ? o.feedbackToken
+          : null;
+    if (ft) {
+      if (/PAUSE/.test(icon)) {
+        token = ft;
+        paused = false;
+        return;
+      }
+      if (/PLAY|RESUME/.test(icon)) {
+        token = ft;
+        paused = true;
+        return;
+      }
+      // A feedbackToken with a non-pause icon (DELETE = clear-all-history, null =
+      // per-item remove) — ignore it and keep looking for the pause/resume control.
+    }
+    for (const k of Object.keys(o)) walk(o[k], d + 1, icon);
+  })(data, 0, '');
+  return { token, paused };
+}
+
 function readHistoryInfo(): void {
   if (!/\/feed\/history/.test(location.pathname)) return;
   try {
@@ -414,6 +463,8 @@ function readHistoryInfo(): void {
     if (!data) return;
     let token: string | null = null;
     let paused: boolean | null = null;
+    // (A) Proven English path: match the label, then dig out its feedbackToken.
+    // Kept first and unchanged so English behavior is identical.
     const seen = new WeakSet<object>();
     (function walk(o: any) {
       if (token || !o || typeof o !== 'object' || seen.has(o)) return;
@@ -435,6 +486,12 @@ function readHistoryInfo(): void {
       }
       for (const k of Object.keys(o)) walk(o[k]);
     })(data);
+    // (B) Non-English fallback: identify the pause/resume control by its icon
+    // (PAUSE*/PLAY*), which is language-independent. This deliberately ignores the
+    // page's other feedbackTokens — the DELETE-icon "clear all history" and the
+    // null-icon per-item "remove from history" — so it can never submit the wrong
+    // one. If no pause/play control is found, token stays null → backoff.
+    if (!token) ({ token, paused } = findHistoryToggleByIcon(data));
     post('HISTORY_INFO', { token, paused, found: !!token });
   } catch {
     /* noop */

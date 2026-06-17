@@ -163,6 +163,29 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
   by Reset). Validated end-to-end: counter == actual API calls, both UIs render, limit + reset work.
   The **"Replies too" checkbox now persists** (`settings.commentSearchReplies`): restored when the
   search window opens, saved (via `SYF_PATCH_SETTINGS`) whenever toggled.
+- **Internationalization audit (2026-06-17 — ja/fr/de/es/ko, LIVE-validated in real Chrome via
+  `scripts/recon-i18n.mjs`):** the icon-based feedback capture ("Less like this"/"Don't recommend
+  channel") and the Data-API comment search are locale-safe (icon enums / structured JSON, not UI
+  text). Two features parsed English-only UI strings and were fixed to be locale-tolerant:
+  - **Wipe history** — anchors on the delete `data-token` (not the localized "Delete activity item"
+    aria-label, which matched **zero** items in every non-English locale), and parses the timestamp
+    across 12-hour (en "3:32 PM"), 24-hour (fr/de/es/ja "15:32") and Korean ("오후 3:32") formats.
+    The live run caught two more bugs the unit tests missed: (1) the video DURATION badge (also
+    "\d+:\d+", e.g. "4:21") was shadowing the real timestamp — fixed by **skipping text inside the
+    thumbnail `<a>`**; (2) an **off-by-one** — the delete button precedes the item's own timestamp in
+    document order, so "last time before the button" grabbed the PREVIOUS item's time — fixed by
+    reading each item's own inline time from its container (`ownTime`), falling back to the
+    document-order time only for shared group headers. Live: 96 items + **96/96** timestamps parsed,
+    each correctly attributed, in ALL of en/ja/fr/de/es/ko.
+  - **Pause/Resume history** — English label match first (unchanged); other locales find the control
+    by its **icon** (`PAUSE_*`/`PLAY_*`, language-independent) via `findHistoryToggleByIcon`. This
+    deliberately **ignores the page's other feedbackTokens** — the DELETE-icon "Clear all watch
+    history" and the ~per-video null-icon "Remove from watch history" — so it can NEVER submit the
+    wrong (destructive) token; if no pause/play control exists it shows the honest backoff. An honest
+    "toggled" toast is shown when the new on/off state can't be read. Live: the icon-based token
+    **matches the proven English-label token** in all six locales (the /feed/history data structure
+    is language-independent; only label TEXT differs). Caveat: the resume-state PLAY icon wasn't
+    exercised live (history was active) — low-risk assumption, falls back to backoff if wrong.
 - **Security & known residuals** (from the 2026-06-16 adversarial review; fixes landed for storage
   races, the debug globals, CSP, sender check, and transient-vs-permanent history backoff). Still
   open, low-risk for personal single-account English use — revisit before any wider distribution:
@@ -175,8 +198,12 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     and toast are always correct* (the toggle reads live state from /feed/history first), but on a
     fresh install / after toggling via YouTube's own UI the pre-click label can be stale until the
     first toggle. A live state read on bar build would fix it but means opening /feed/history.
-  - History token extraction matches English labels (`pause/turn on watch history`) — non-English
-    locales fall through to the "control gone" backoff.
+  - History pause/resume: English labels (`pause/turn on watch history`) are the primary match;
+    non-English locales identify the control by its **icon** (`PAUSE_*`/`PLAY_*`, via
+    `findHistoryToggleByIcon`) — which by construction ignores the page's DELETE-icon "clear all
+    history" token and the null-icon per-item "remove" tokens, so it can't submit a destructive wrong
+    token. Live-validated (icon token == English-label token in en/ja/fr/de/es/ko); the resume-state
+    PLAY icon wasn't exercised (history was active). If no pause/play control is found → backoff.
   - Settings dialog frames `options.html` from youtube.com (needed for the feature); a malicious
     youtube.com page could clickjack the one-click Undo/Redo (Reset is behind a native confirm). The
     CSP blocks non-youtube origins.
@@ -188,34 +215,37 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     YouTube *watch* page (clickjacking the user's logged-in session there). Tighter options for later:
     make the rule **dynamic** (enable only while a search window is open), or nonce/initiator-gate it.
     The framed page runs the user's real authenticated session — fine for this single-user tool.
-- **Feature 2 — Wipe history (scan + UI DONE; delete built, NOT yet validated):**
-  - `src/content/myactivity.ts` runs on myactivity.google.com: pairs each "Delete activity item"
-    button with the timestamp preceding it in document order (handles grouped times), filters to a
-    window. SW (`handleWipe`) opens a fresh background My Activity tab, relays `SYF_MA_SCAN`/
+- **Feature 2 — Wipe history (scan + UI DONE; real RPC delete VALIDATED 2026-06-17):**
+  - `src/content/myactivity.ts` runs on myactivity.google.com: it anchors each item on its delete
+    **token** (`data-token`/`data-date` on the item's `<c-wiz>` — **not** the localized "Delete
+    activity item" aria-label) and pairs it with its own inline timestamp (`ownTime`; falls back to a
+    shared group-header time), filters to a window. Timestamps parse across locales — English 12-hour
+    AM/PM, 24-hour (fr/de/es/ja), and Korean 오전/오후 (`timeTextOf`/`parseTimeOfDay`); time-text
+    inside the thumbnail `<a>` is skipped so the video DURATION badge (also "\d+:\d+") can't shadow
+    the real timestamp. (Live-validated en/ja/fr/de/es/ko — see the i18n audit above.)
+    SW (`handleWipe`) opens a fresh background My Activity tab, relays `SYF_MA_SCAN`/
     `SYF_MA_DELETE`, then closes the tab. Watch-page dialog: presets (15/30/60/120 + custom) →
     **scan → review the exact item list + window times → red Delete** (gated). Scan verified
-    (`test-wipe-scan`, `test-wipe-ui`). **The irreversible per-item delete-click is NOT yet
-    exercised** — validate on a tiny window with the user's OK before trusting it.
+    (`test-wipe-scan`, `test-wipe-ui`). **The real RPC delete is now validated end-to-end** on a
+    Japanese (`?hl=ja`) page via `test-wipe-delete-ja.mjs`: a single-item ±30s window (hard-gated to
+    exactly one item), `deleted=1`, and the item was gone from its window after reload (total 67→66).
+    So token-based detection + localized timestamp parsing + the `TmdDAd` RPC all work together.
   - Caveat: timestamps are minute-precision, assumed "today" (yesterday if the time is in the
     future). Deletion re-scans after each click (DOM mutates).
   - Adapter A (UI click) is dead: the confirm "Delete" is a Material Web button (`VfPpkd-LgbsSe`)
     requiring a TRUSTED event, which content scripts can't dispatch (verified: `.click()` and full
     pointer sequences leave the count unchanged).
-  - **Adapter B — RPC delete (IMPLEMENTED, chosen by Seth; live-delete NOT yet verified):**
+  - **Adapter B — RPC delete (IMPLEMENTED, chosen by Seth; live-delete VERIFIED 2026-06-17):**
     `myactivity.ts` deletes via `POST /_/FootprintsMyactivityUi/data/batchexecute?rpcids=TmdDAd`
     with `f.req=[[["TmdDAd","[[null,[\"youtube\"]],[\"<token>\"]]",null,"generic"]]]&at=<at>`.
     Per-item `<token>` = the `data-token` attr on the item's `<c-wiz>` ancestor (also `data-date`);
     `at`/`f.sid`/`bl` parsed from the inline `WIZ_global_data` script (`SNlM0e`/`FdrFJe`/`cfb2h`).
     Same-origin authed fetch — no trusted-event problem. Captured from a real delete via
     `scripts/recon-ma-rpc(2).mjs`.
-  - **Live validation INCONCLUSIVE this session (external timing, not a code issue):** fresh
-    watches don't propagate to My Activity within ~11 min (polled), and the authorized recent
-    windows were empty (this session's test-watches were already deleted during debugging — proof
-    that deletion works via *some* path; trusted real-clicks definitely worked). The RPC replicates
-    the captured real request byte-for-byte and runs without error, so confidence is high, but the
-    RPC path specifically is not independently confirmed. **Finalize on first real use:** wipe
-    recent (already-propagated) activity via the UI, review the list, Delete, and confirm the count
-    drops. The review-before-delete UI makes this safe to do for real.
+  - **Live validation DONE (2026-06-17):** `test-wipe-delete-ja.mjs` deleted one real item on a
+    `?hl=ja` page through the shipped content script — `deleted=1`, gone from its ±30s window after
+    reload, total 67→66. (Earlier the RPC path was unconfirmed only due to My Activity propagation
+    lag; it's now independently confirmed.) The review-before-delete UI still makes real use safe.
 - **Feature 3 — Find in comments (DONE; verified end-to-end with a real key, 2026-06-17):**
   - Bar **Find in comments** opens a **separate normal window** (`chrome.windows.create`
     `type:'normal'`, ~940×820 — a titled, modestly-sized window, not a big chrome-less popup) of
@@ -279,7 +309,12 @@ Dev/test scripts in `scripts/`: recon-feedback, recon-undo, recon-myactivity(2),
 validate-replay, test-click, test-undo, test-toggle-log, test-native, test-toast, test-wipe-scan,
 test-wipe-ui, test-comment-search, test-comment-cache, debug-ma, diag, **release-shots** (release
 validation: regenerates the README comment-search screenshots + checks both 2026-06-17 security
-fixes — dynamic iframe rule via DNR state, and isolated-world feedback apply/undo).
+fixes — dynamic iframe rule via DNR state, and isolated-world feedback apply/undo), **recon-i18n**
+(READ-ONLY i18n validation: renders /feed/history + My Activity in ja/fr/de/es/ko via the
+non-persistent `?hl=` override and runs our actual parsers against the live localized DOM/data;
+`recon-ma-dom`/`recon-history-data` are the one-off DOM/data dumps used to design those parsers),
+**test-wipe-delete-ja** (user-approved REAL single-item delete on a `?hl=ja` My Activity page —
+hard-gated to one item — that validated the `TmdDAd` RPC end-to-end).
 
 ## Layout
 

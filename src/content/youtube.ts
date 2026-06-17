@@ -140,6 +140,12 @@ async function toggleHistory(): Promise<void> {
     settings = { ...settings, lastHistoryPaused: res.paused };
     updateHistoryButton();
     showToast(res.paused ? 'Watch history paused.' : 'Watch history resumed.');
+  } else if (res?.ok) {
+    // Toggle submitted, but we couldn't read the new on/off state (e.g. a
+    // non-English layout where the label wasn't parsed). Report honestly rather
+    // than guessing a direction; the cached label is left as-is.
+    updateHistoryButton();
+    showToast('Watch history toggled. Open YouTube’s History settings to confirm the new state.');
   } else if (res?.error === 'no-control') {
     // Genuine: page parsed but the control is gone (YouTube changed its code).
     b.textContent = prev || '⏸ Pause history';
@@ -602,7 +608,16 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
       if (historyInfo.token) {
         const res = await replay(historyInfo.token, 'apply');
         const ok = replayOk(res);
-        sendResponse({ ok, found: true, paused: ok ? !historyInfo.paused : historyInfo.paused, error: ok ? undefined : 'submit-failed' });
+        // Only flip a KNOWN boolean state. If paused is unknown (the non-English
+        // icon fallback couldn't tell), keep it undefined so the bar shows an
+        // honest "toggled" toast instead of guessing a direction.
+        const known = typeof historyInfo.paused === 'boolean' ? historyInfo.paused : undefined;
+        sendResponse({
+          ok,
+          found: true,
+          paused: ok ? (known === undefined ? undefined : !known) : known,
+          error: ok ? undefined : 'submit-failed',
+        });
       } else if (historyInfo.found === false) {
         sendResponse({ ok: false, found: false, error: 'no-control' }); // parsed, control truly absent
       } else {
