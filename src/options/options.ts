@@ -119,14 +119,33 @@ let log: ActionLogEntry[] = [];
 function rowHtml(e: ActionLogEntry, i: number): string {
   const typeLabel = e.type === 'notInterested' ? 'Less like this (Not interested)' : 'Don’t recommend channel';
   const when = new Date(e.ts).toLocaleString();
-  const title = e.title || e.channelName || e.videoId || '(unknown)';
+  const videoUrl = e.videoId ? `https://www.youtube.com/watch?v=${encodeURIComponent(e.videoId)}` : '';
+  const channelUrl = e.channelId ? `https://www.youtube.com/channel/${encodeURIComponent(e.channelId)}` : '';
+
+  // A clickable link when we have a URL to open, otherwise plain text. The title opens the
+  // video; the channel name opens the channel (both in a new tab).
+  const cell = (text: string, url: string, cls: string) =>
+    url
+      ? `<div class="${cls}"><a class="loglink" href="${esc(url)}" target="_blank" rel="noopener" title="${esc(text)}">${esc(text)}</a></div>`
+      : `<div class="${cls}">${esc(text)}</div>`;
+
+  let rows: string;
+  if (e.title || e.videoId) {
+    // Normal case (a video action): title line = the video, channel line = the channel.
+    rows = cell(e.title || e.videoId!, videoUrl, 'logtitle');
+    if (e.channelName || e.channelId) rows += cell(e.channelName || 'View channel', channelUrl, 'logchannel');
+  } else {
+    // Channel-only action with no video context — promote the channel to the title line.
+    rows = cell(e.channelName || '(unknown)', channelUrl, 'logtitle');
+  }
+
   let btn = '';
   if (!e.undone && e.undoToken) btn = `<button class="logbtn" data-undo="${i}">Undo</button>`;
   else if (e.undone && e.actionToken) btn = `<button class="logbtn" data-redo="${i}">Redo</button>`;
   return `<div class="logrow ${e.undone ? 'undone' : ''}">
       <div class="logmeta">
-        <div class="logtitle">${esc(title)}</div>
-        <div class="logsub">${typeLabel} · <span class="src src-${e.source}">${e.source}</span> · ${esc(when)}${e.undone ? ' · undone' : ''}</div>
+        ${rows}
+        <div class="logsub">${typeLabel} · <span class="src src-${e.source}">${esc(e.source)}</span> · ${esc(when)}${e.undone ? ' · undone' : ''}</div>
       </div>${btn}</div>`;
 }
 

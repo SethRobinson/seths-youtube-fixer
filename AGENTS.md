@@ -81,7 +81,11 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     `feedbackEndpoint` embeds `…undoFeedbackEndpoint.undoToken`; POSTing that reverses the action
     (`isProcessed:true`). Captured + cached alongside the action token.
   - **Action log** (`syf.actionlog`, ≤1000 entries) records every action with type/source/video/
-    undo token. The bar's **ℹ Info** button opens an in-page panel with per-row **Undo / Redo**.
+    channel/undo token. The bar's **ℹ Info** button opens an in-page panel with per-row **Undo /
+    Redo**. Each row shows the **video title** (links → the video) on one line and the **channel
+    name** (links → `/channel/<id>`) below it; both open in a new tab. `channelName`/`channelId`
+    were already captured per entry (from the player's `videoDetails.author`/`channelId`, or the
+    capture tuple for native actions) — surfacing them needed no cache/log format change.
   - **Native capture:** bridge hooks YouTube's own `/youtubei/v1/feedback` POSTs; if the token
     matches our captured index, it's logged `source:'native'` (undoable). Limitation: only matches
     videos captured classically — native actions on `lockupViewModel` cards can't be identified.
@@ -314,7 +318,9 @@ fixes — dynamic iframe rule via DNR state, and isolated-world feedback apply/u
 non-persistent `?hl=` override and runs our actual parsers against the live localized DOM/data;
 `recon-ma-dom`/`recon-history-data` are the one-off DOM/data dumps used to design those parsers),
 **test-wipe-delete-ja** (user-approved REAL single-item delete on a `?hl=ja` My Activity page —
-hard-gated to one item — that validated the `TmdDAd` RPC end-to-end).
+hard-gated to one item — that validated the `TmdDAd` RPC end-to-end), **verify-log-channel**
+(READ-ONLY: opens the options page and asserts each action-log row renders the channel name with
+correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
 
 ## Layout
 
