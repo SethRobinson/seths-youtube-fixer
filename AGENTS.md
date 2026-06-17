@@ -15,7 +15,9 @@ the watch page:
 1. **Less like this** — submit YouTube's real *Not interested* feedback for the current video.
 2. **Don't recommend channel** — submit YouTube's real *Don't recommend channel* feedback.
 3. **Wipe history** — fast-delete recent YouTube activity via Google My Activity.
-4. **Find in comments** — search all public comments/replies via the YouTube Data API (not built yet).
+4. **Find in comments** — opens a separate two-pane window: search every public comment/reply on the
+   current video via the YouTube Data API (top), click a match to open the real YouTube page at that
+   comment (bottom) and Like/Reply natively. (DONE — see Feature 3 in Status.)
 
 The two feedback buttons work by capturing YouTube's internal feedback endpoints from
 recommendation cards and replaying them — **never fabricated**. They stay grayed (but still
@@ -116,6 +118,49 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
   - **Hide Shorts** setting toggles `html.syf-hide-shorts`; CSS hides Shorts shelves/cards/nav (live
     via `storage.onChanged`). Settings include `hideShorts`, `feedbackTtlDays`, `maxCacheVideos`,
     `lastHistoryPaused`, `dismissedWarnings`. No current setting needs a page reload (all apply live).
+- **Release prep (2026-06-17 — public-release pass):** rewrote `README.md` for end users
+  (features + screenshots in `docs/images/` + Load-unpacked install for Chrome/Brave);
+  **added extension icons** (`src/icons/` 16/32/48/128 generated via System.Drawing, wired
+  into the manifest `icons`/`action.default_icon`; 512 master kept in `store-assets/`, NOT
+  bundled); **masked the API key field** (options page input is now `type=password` + a
+  Show/Hide toggle); **trimmed permissions** — removed `sidePanel` + `scripting` (verified
+  unused) and `activeTab` (redundant with `tabs` + host perms); manifest now requests only
+  `storage`/`unlimitedStorage`/`tabs`/`declarativeNetRequest`. Added **`build_release.bat`**
+  (sets `SYF_RELEASE=1`, which makes `build.mjs` drop sourcemaps — code stays unminified for
+  review — then zips `dist/` → `releases/seths-youtube-fixer-vX.zip`, manifest at zip root).
+  Added a privacy-policy draft (`PRIVACY.md`) and two reports under `docs/`:
+  `CHROME_WEB_STORE_REVIEW.md` (verdict: fine to install privately; a store listing still
+  needs a hosted privacy policy + the framing/internal-endpoint automation is a real
+  §4.4.1/YouTube-ToS takedown risk) and `SECURITY_REVIEW.md`.
+- **Security hardening (2026-06-17 — both fixed + validated in real signed-in Chrome via
+  `scripts/release-shots.mjs`):**
+  1. **iframe header-strip rule is now DYNAMIC.** `syf_iframe` ships `enabled:false`; the SW
+     enables it **only while a `comments/search.html` window is open** and disables it on close
+     (`setIframeRuleset`/`syncIframeRuleset`, keyed to a search tab existing; self-heals on SW
+     wake). Enabling is done directly in the `SYF_OPEN_COMMENT_SEARCH` handler (relying on the
+     tab-presence sync to ENABLE races the just-created tab's URL — it only DISABLES). Verified:
+     rulesets `[]`→`["syf_iframe"]`→`[]` across open/close, bottom pane still frames the real page.
+  2. **Authenticated feedback submission moved OUT of the MAIN-world bridge into the isolated
+     world** (`youtube.ts`): it reads `SAPISID` from `document.cookie` and gets the page's public
+     innertube config via a one-way `YT_CONFIG` message (bridge `postConfig`, polled with
+     `REQUEST_CONFIG`). The bridge's page-reachable `REPLAY` handler + `submitFeedback` are gone
+     (confirmed absent from the prod bundle). Closes the forgeable-`REPLAY` write primitive.
+     Verified net-neutral apply→undo via the button UI. (The old `__syfSubmitFeedback` MAIN hook
+     was removed; `__syfDebug` read-only peek stays, still `__SYF_DEV__`-gated. Dev scripts
+     test-undo/test-native/validate-replay/recon-yt-history3 used that hook and are now superseded
+     by the UI-driven path.)
+  `typecheck` + `build` green after all changes.
+- **Comment-search settings (2026-06-17):** the per-scan comment cap is now a **user setting**
+  (`settings.commentScanCap`, default **50,000**, range **1,000–200,000** in the options page) instead
+  of a hardcoded 10,000 — comments aren't persisted, so it only bounds one scan's time/quota; search.ts
+  reads it on window open. Added a **local API-quota estimate** (the Data API can't report real
+  remaining quota to a key): the SW counts each `commentThreads`/`comments` call (1 unit) into
+  `syf.quota` `{ptDate, used}`, **resets at midnight Pacific** (`Intl` `America/Los_Angeles` date),
+  throttled writes, exposed via `SYF_GET_QUOTA` / `SYF_RESET_QUOTA`. Options page shows a gauge + a
+  configurable daily limit (`settings.apiDailyQuota`, default 10,000) + a Google Cloud quota link +
+  "Reset counter"; the search window shows a compact readout (refreshed after each search). It's an
+  estimate (doesn't see other consumers of the same key). `QUOTA_KEY` is in `ALL_STORAGE_KEYS` (cleared
+  by Reset). Validated end-to-end: counter == actual API calls, both UIs render, limit + reset work.
 - **Security & known residuals** (from the 2026-06-16 adversarial review; fixes landed for storage
   races, the debug globals, CSP, sender check, and transient-vs-permanent history backoff). Still
   open, low-risk for personal single-account English use — revisit before any wider distribution:
@@ -135,6 +180,12 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     CSP blocks non-youtube origins.
   - `relayReplay` targets the first open youtube.com tab — a multi-account user could submit a token
     against the wrong account.
+  - **(Feature 3) declarativeNetRequest strips `X-Frame-Options`/CSP** on framed
+    `https://www.youtube.com/watch` sub_frames so the comment-search window can embed the real page.
+    Scoped to watch pages (not `/embed/`), but it's global while installed: any site could now frame a
+    YouTube *watch* page (clickjacking the user's logged-in session there). Tighter options for later:
+    make the rule **dynamic** (enable only while a search window is open), or nonce/initiator-gate it.
+    The framed page runs the user's real authenticated session — fine for this single-user tool.
 - **Feature 2 — Wipe history (scan + UI DONE; delete built, NOT yet validated):**
   - `src/content/myactivity.ts` runs on myactivity.google.com: pairs each "Delete activity item"
     button with the timestamp preceding it in document order (handles grouped times), filters to a
@@ -163,12 +214,70 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     RPC path specifically is not independently confirmed. **Finalize on first real use:** wipe
     recent (already-propagated) activity via the UI, review the list, Delete, and confirm the count
     drops. The review-before-delete UI makes this safe to do for real.
-- **Open / next options:** validate the real delete (small window); Feature 3 — Comment search
-  (needs API key); more Feature 1 coverage (lockupViewModel), Hate end-to-end, aged replay.
+- **Feature 3 — Find in comments (DONE; verified end-to-end with a real key, 2026-06-17):**
+  - Bar **Find in comments** opens a **separate normal window** (`chrome.windows.create`
+    `type:'normal'`, ~940×820 — a titled, modestly-sized window, not a big chrome-less popup) of
+    `comments/search.html?v=…&title=…`, via `SYF_OPEN_COMMENT_SEARCH` — NOT an in-page modal — so the
+    user can keep watching/reading in the original tab while the (slow) scan runs. Reworked from the
+    first cut (in-page `#syf-cs` modal) at Seth's request, 2026-06-17.
+  - **Two resizable panes** (`comments/search.ts` + `.html`, styled to **YouTube's own light/dark
+    scheme** via CSS vars + `prefers-color-scheme`, not the dark `.syf-*` look): a header (video
+    thumb + title + search controls), then a **draggable horizontal divider** (CSS grid
+    `grid-template-rows`, drag updates it; iframe `pointer-events:none` while dragging). **Top pane** =
+    scrollable list of matching comments (avatar, author, age, 👍, reply count / "reply to @x" badge,
+    highlighted text, ↗ open-this-comment). **Bottom pane** = the **REAL YouTube watch page in an
+    `<iframe name="syf-embed">`**; clicking a match sets the iframe to `watch?v=…&lc=<id>` so the user
+    Likes/Replies **natively on the real, signed-in page** ("that is real in the bottom pane").
+  - **Click-outs** (`openExternal`, reuses one auxiliary window so repeats don't pile up): the header
+    **thumbnail** → opens the video (`watch?v=…`) in a new window (handy if the original tab was lost);
+    a comment's **avatar or author name** → opens that channel (`/channel/<id>`) in a new window. The
+    ↗ on a row pops that comment out into the same auxiliary window.
+  - **Framing YouTube (the linchpin):** YouTube blocks being framed (`X-Frame-Options` / CSP
+    `frame-ancestors`). A **`declarativeNetRequest`** static ruleset (`rules/iframe-rules.json`,
+    permission `declarativeNetRequest`) **removes `x-frame-options` + `content-security-policy`** on
+    **`sub_frame` loads of `https://www.youtube.com/watch`** (scoped to framed watch pages — `/embed/`
+    on other sites is untouched). Proven: the framed page renders fully + **stays signed in** (3p
+    cookies OK in this profile). No JS framebust observed.
+  - **`content/embed.ts`** (content script, `all_frames:true`, only acts when `window.name ===
+    'syf-embed'`): **mutes + briefly pauses** the framed video so it doesn't fight the main window,
+    and **drives the scroll** to the linked comment — YouTube's `&lc=` auto-scroll never fires in an
+    iframe because comments lazy-load on scroll and nothing scrolls, so embed.ts scrolls `#comments`
+    into view to trigger the load, then centers the highlighted/linked comment (YouTube shows it under
+    a "Highlighted comment" header). Self-terminates once revealed so it never fights user scrolling.
+  - **Search pipeline:** the **SW** makes the `googleapis.com` calls (`commentThreads.list`, plus
+    `comments.list` when "Replies too" is on) with `settings.apiKey` (`SYF_COMMENTS_PAGE` /
+    `SYF_COMMENT_REPLIES`) — key stays out of pages, dodges CORS. The search window drives pagination +
+    client-side substring filtering, **streaming** matches in with live progress (scanned · matches ·
+    API calls), **Stop**, and **Load more** (auto-pauses at a **user-configurable** cap
+    `settings.commentScanCap`, default **50,000**, range **1,000–200,000** in the options page —
+    comments aren't persisted, so it only bounds one scan's time/quota). 1 quota unit
+    / 100-thread page; call count shown. `textFormat=plainText` + full HTML-escaping (no XSS). Default
+    scans top-level + ≤5 free preview replies; "Replies too" deep-fetches all (more quota);
+    unscanned-reply threads are counted + noted.
+  - **In-window comment cache (quota saver, 2026-06-17):** fetched threads are cached in memory
+    (`store`) while the window is open, so **re-searching a different word re-filters the cache with 0
+    new API calls** (status shows "reused cached comments · 0 new API calls"). The cache is reused for
+    `FRESH_MS` = **5 min** and only when **order + "Replies too" match**; after that, or on a param
+    change, the next search re-fetches. A partial (Stopped/capped) cache is still reused and extended
+    via **Load more**. Closing the window drops the cache (a reopen re-fetches). Verified by
+    `scripts/test-comment-cache.mjs`.
+  - **Why deep-link/embed instead of API writes** (Seth's call): the Data API has **no** like-a-comment
+    endpoint and needs **OAuth** to reply; the embedded real page sidesteps both and uses the key only
+    for search. **Bar button color:** "Find in comments" is a normal **ready** button once a key is
+    set; it's grayed (`data-state='disabled'`) **only** when no key exists (clicking the gray one opens
+    settings). `updateFindCommentsButton()` keeps it live on settings change.
+  - Verified via `scripts/test-comment-search.mjs` (button state, window opens, real search, divider
+    drag, bottom-pane frames + signed-in + scrolled-to-comment; screenshots in `test-results/`).
+- **Open / next options:** validate the real delete (small window); more Feature 1 coverage
+  (lockupViewModel), Hate end-to-end, aged replay. Possible Feature-3 extras: reuse one search window
+  instead of opening a new one each click, paste a URL to search another video, whole-word/regex
+  match, remember the divider position.
 
 Dev/test scripts in `scripts/`: recon-feedback, recon-undo, recon-myactivity(2), measure-feedback,
 validate-replay, test-click, test-undo, test-toggle-log, test-native, test-toast, test-wipe-scan,
-test-wipe-ui, debug-ma, diag.
+test-wipe-ui, test-comment-search, test-comment-cache, debug-ma, diag, **release-shots** (release
+validation: regenerates the README comment-search screenshots + checks both 2026-06-17 security
+fixes — dynamic iframe rule via DNR state, and isolated-world feedback apply/undo).
 
 ## Layout
 
@@ -176,13 +285,25 @@ test-wipe-ui, debug-ma, diag.
 - `src/background/service-worker.ts` — background SW (message router, storage).
 - `src/content/youtube.ts` — isolated-world content script: SPA-nav detection, bar injection.
 - `src/content/page-bridge.ts` — MAIN-world script: reads ytInitialData/ytcfg, session feedback POSTs.
-- `src/content/styles.css` — bar styles.
+- `src/content/embed.ts` — isolated-world, `all_frames`: tames the bottom-pane watch iframe (mute/pause
+  the video, scroll to the linked comment); only acts when `window.name === 'syf-embed'`.
+- `src/content/styles.css` — bar + in-page modal styles (the comment search has its own page styles).
+- `src/comments/` — the **Find in comments** window (`search.html` + `search.ts`): two resizable panes,
+  YouTube-themed; top = API search results, bottom = the real watch page framed at the clicked comment.
+- `src/rules/iframe-rules.json` — `declarativeNetRequest` ruleset: strips `X-Frame-Options`/CSP on
+  framed `youtube.com/watch` loads so the bottom pane can embed the real page.
 - `src/options/`, `src/popup/` — options page (API key, hide-shorts, TTL, **action log**, reset;
   also opened in-page as the **ℹ Info** dialog) and toolbar popup.
 - `src/wipe/` — standalone Wipe-history page, opened in a new tab via `wipe.html?minutes=N`.
   (The old standalone `src/log/` page was removed — the action log now lives in the options page.)
 - `src/common/messages.ts` — shared messages/types/settings.
+- `src/icons/` — extension icons (16/32/48/128 PNG), referenced by the manifest; copied to
+  `dist/icons/` by the build. The 512px master lives in `store-assets/` (listing art, not shipped).
 - `scripts/` — esbuild build + CDP harness (`chrome-lib`, `setup`, `drive`, `reload`, `diag`).
+  `build.mjs` drops sourcemaps when `SYF_RELEASE=1`.
+- `build_release.bat` — production build (`SYF_RELEASE=1`) → zips `dist/` to `releases/`.
+- `docs/` — `images/` (README screenshots), `CHROME_WEB_STORE_REVIEW.md`, `SECURITY_REVIEW.md`.
+- `PRIVACY.md` — privacy-policy draft (host at a URL before any store listing).
 - `test/` — Playwright (`fixtures.ts` attaches over CDP; `smoke.spec.ts`).
 
 ## Commands
@@ -193,6 +314,7 @@ test-wipe-ui, debug-ma, diag.
 - `npm run reload` — rebuild + hot-reload the live extension.
 - `npm run drive` — rebuild + reload + smoke (injects bar, screenshots `test-results/`).
 - `npm test` — rebuild + reload + full Playwright suite.
+- `build_release.bat` — production build + zip to `releases/` (Windows; double-click or run).
 
 ## Critical: how dynamic testing works (do NOT re-derive this)
 

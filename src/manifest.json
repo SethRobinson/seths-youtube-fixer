@@ -3,7 +3,13 @@
   "name": "Seth's YouTube Fixer",
   "version": "0.1.0",
   "description": "Power-user controls for YouTube: Less like this, Don't recommend channel, fast history wipe, and comment search.",
-  "permissions": ["storage", "unlimitedStorage", "scripting", "tabs", "activeTab", "sidePanel"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": ["storage", "unlimitedStorage", "tabs", "declarativeNetRequest"],
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://m.youtube.com/*",
@@ -12,6 +18,15 @@
   ],
   "background": {
     "service_worker": "background/service-worker.js"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "syf_iframe",
+        "enabled": false,
+        "path": "rules/iframe-rules.json"
+      }
+    ]
   },
   "content_scripts": [
     {
@@ -32,11 +47,24 @@
       "js": ["content/myactivity.js"],
       "run_at": "document_idle",
       "world": "ISOLATED"
+    },
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content/embed.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "ISOLATED"
     }
   ],
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "Seth's YouTube Fixer"
+    "default_title": "Seth's YouTube Fixer",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "options_ui": {
     "page": "options/options.html",

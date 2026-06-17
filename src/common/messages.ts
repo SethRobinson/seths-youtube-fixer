@@ -36,7 +36,19 @@ export type SyfMessage =
   | { type: 'SYF_HISTORY'; action: 'toggle' | 'state' }
   | { type: 'SYF_HISTORY_DO'; action: 'toggle' | 'state' }
   | { type: 'SYF_PATCH_SETTINGS'; patch: Partial<SyfSettings> }
+  | { type: 'SYF_OPEN_COMMENT_SEARCH'; videoId: string; title?: string }
+  | { type: 'SYF_COMMENTS_PAGE'; videoId: string; pageToken?: string; order?: 'relevance' | 'time' }
+  | { type: 'SYF_COMMENT_REPLIES'; parentId: string; pageToken?: string }
+  | { type: 'SYF_GET_QUOTA' }
+  | { type: 'SYF_RESET_QUOTA' }
   | { type: 'SYF_RESET' };
+
+export interface QuotaResult {
+  ok: true;
+  used: number; // estimated API units this extension spent today (Pacific)
+  limit: number; // the user's daily quota (settings.apiDailyQuota, default 10,000)
+  ptDate: string; // the Pacific date the count is for (YYYY-MM-DD)
+}
 
 export interface HistoryResult {
   ok: boolean;
@@ -87,7 +99,59 @@ export interface LogResult {
   log: ActionLogEntry[];
 }
 
+// --- Find in comments (YouTube Data API v3) ---
+export interface CsComment {
+  id: string; // comment id (top-level), or "parentId.replyId" for a reply — usable as &lc=
+  parentId?: string;
+  isReply: boolean;
+  author: string;
+  authorChannelId?: string;
+  authorAvatar?: string;
+  text: string; // plain text (textFormat=plainText)
+  likeCount: number;
+  publishedAt: string;
+}
+
+export interface CsThread {
+  top: CsComment;
+  replies: CsComment[]; // preview replies (≤5) from commentThreads, or all when deep-fetched
+  totalReplyCount: number;
+  hasMoreReplies: boolean; // totalReplyCount > replies.length
+}
+
+export interface CommentsPageResult {
+  ok: boolean;
+  threads?: CsThread[];
+  nextPageToken?: string;
+  error?: string; // friendly message for the UI
+  reason?: string; // raw API reason for branching (noKey, keyInvalid, quotaExceeded, commentsDisabled, …)
+}
+
+export interface RepliesPageResult {
+  ok: boolean;
+  replies?: CsComment[];
+  nextPageToken?: string;
+  error?: string;
+  reason?: string;
+}
+
 export const SETTINGS_KEY = 'syf.settings';
+
+// "Find in comments" scan cap: how many comments (incl. replies) a single scan loads before
+// pausing for "Load more". Comments are NOT persisted (held in memory only while the window is
+// open, then dropped), so this just bounds one scan's time + API quota — not storage. The
+// default is generous so most videos finish in one pass; "Load more" continues past it.
+export const DEFAULT_SCAN_CAP = 50_000;
+export const MIN_SCAN_CAP = 1_000;
+export const MAX_SCAN_CAP = 200_000;
+
+// Daily YouTube Data API quota (units). Google's default is 10,000/day; users who request an
+// increase can set their real number here. Used only to render the "units used today" gauge.
+export const DEFAULT_DAILY_QUOTA = 10_000;
+
+// Local estimate of API units this extension has spent today (resets at midnight Pacific, like
+// Google's quota). The API can't report remaining quota to a key, so we count our own calls.
+export const QUOTA_KEY = 'syf.quota';
 
 export interface SyfSettings {
   apiKey?: string;
@@ -95,6 +159,8 @@ export interface SyfSettings {
   confirmBeforeWipe?: boolean;
   feedbackTtlDays?: number; // how long a cached feedback token is considered usable
   maxCacheVideos?: number; // LRU cap for the feedback cache, applied to both videos and channels
+  commentScanCap?: number; // "Find in comments": comments loaded per scan before pausing for "Load more"
+  apiDailyQuota?: number; // your YouTube Data API daily quota (units); for the "used today" gauge
   hideShorts?: boolean; // hide Shorts shelves/cards from feeds
   lastHistoryPaused?: boolean; // cached watch-history state for the bar toggle label
   dismissedWarnings?: Record<string, boolean>; // "don't show again" flags (e.g. { history: true })
@@ -106,8 +172,10 @@ export const DEFAULT_SETTINGS: SyfSettings = {
   confirmBeforeWipe: true,
   feedbackTtlDays: 7,
   maxCacheVideos: DEFAULT_CACHE_CAP,
+  commentScanCap: DEFAULT_SCAN_CAP,
+  apiDailyQuota: DEFAULT_DAILY_QUOTA,
   hideShorts: false,
 };
 
 // Storage keys cleared by "Reset data for this extension".
-export const ALL_STORAGE_KEYS = [FEEDBACK_KEY, ACTIONLOG_KEY, SETTINGS_KEY];
+export const ALL_STORAGE_KEYS = [FEEDBACK_KEY, ACTIONLOG_KEY, SETTINGS_KEY, QUOTA_KEY];

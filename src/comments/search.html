@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Find in comments</title>
+    <style>
+      /* YouTube-style palette (light by default, dark to match YouTube's dark theme). */
+      :root {
+        --bg: #f9f9f9;
+        --surface: #ffffff;
+        --text: #0f0f0f;
+        --text2: #606060;
+        --border: #e5e5e5;
+        --chip: #f2f2f2;
+        --chip-hover: #e5e5e5;
+        --accent: #065fd4;
+        --accent-text: #ffffff;
+        --hover: #f2f2f2;
+        --sel: #def1ff;
+        --hl: #ffd54a;
+        --hl-text: #0f0f0f;
+        --shadow: rgba(0, 0, 0, 0.1);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f0f0f;
+          --surface: #181818;
+          --text: #f1f1f1;
+          --text2: #aaaaaa;
+          --border: #303030;
+          --chip: #272727;
+          --chip-hover: #3f3f3f;
+          --accent: #3ea6ff;
+          --accent-text: #0f0f0f;
+          --hover: #272727;
+          --sel: #263850;
+          --hl: #ffd54a;
+          --hl-text: #0f0f0f;
+          --shadow: rgba(0, 0, 0, 0.5);
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: flex;
+        flex-direction: column;
+        font: 14px 'Roboto', Arial, sans-serif;
+        color: var(--text);
+        background: var(--bg);
+        overflow: hidden;
+      }
+
+      /* --- header --- */
+      #cs-header {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        padding: 12px 16px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        flex: 0 0 auto;
+      }
+      #cs-thumb {
+        width: 120px;
+        height: 68px;
+        flex: 0 0 auto;
+        border-radius: 10px;
+        object-fit: cover;
+        background: var(--chip);
+        cursor: pointer;
+      }
+      #cs-thumb:hover { filter: brightness(1.06); }
+      #cs-headmain { flex: 1; min-width: 0; }
+      #cs-title {
+        font-size: 15px;
+        font-weight: 600;
+        line-height: 1.35;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      #cs-controls { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+      .cs-quota { font-size: 11px; color: var(--text2); margin-top: 7px; }
+      .cs-quota a { color: var(--accent); text-decoration: none; }
+      .cs-quota a:hover { text-decoration: underline; }
+      #cs-q {
+        flex: 1 1 220px;
+        min-width: 160px;
+        padding: 9px 14px;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--bg);
+        color: var(--text);
+        font: inherit;
+      }
+      #cs-q:focus { outline: none; border-color: var(--accent); }
+      select, .cs-btn {
+        font: inherit;
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        background: var(--chip);
+        color: var(--text);
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+      select { padding: 8px 8px; }
+      .cs-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text2); white-space: nowrap; cursor: pointer; }
+      .cs-btn:hover { background: var(--chip-hover); }
+      #cs-go { background: var(--accent); color: var(--accent-text); border-color: transparent; font-weight: 600; padding: 8px 18px; }
+      #cs-go:hover { filter: brightness(1.06); }
+
+      /* --- status bar --- */
+      #cs-status {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex: 0 0 auto;
+        min-height: 18px;
+        padding: 7px 16px;
+        font-size: 12px;
+        color: var(--text2);
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+      }
+      .cs-err { color: #e00000; }
+      @media (prefers-color-scheme: dark) { .cs-err { color: #ff8a80; } }
+      .cs-spin {
+        width: 13px; height: 13px; flex: 0 0 auto;
+        border: 2px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: cs-spin 0.7s linear infinite;
+      }
+      @keyframes cs-spin { to { transform: rotate(360deg); } }
+
+      /* --- split panes --- */
+      #cs-split {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: 42% 9px 1fr;
+      }
+      #cs-list { overflow-y: auto; background: var(--bg); }
+      #cs-divider {
+        background: var(--border);
+        cursor: row-resize;
+        position: relative;
+      }
+      #cs-divider::after {
+        content: '';
+        position: absolute;
+        left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
+        width: 44px; height: 3px;
+        border-radius: 3px;
+        background: var(--text2);
+        opacity: 0.5;
+      }
+      #cs-divider:hover::after { opacity: 0.9; }
+      #cs-bottom { position: relative; background: #000; min-height: 0; }
+      #cs-frame { width: 100%; height: 100%; border: 0; display: none; }
+      #cs-placeholder {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        text-align: center; padding: 24px;
+        color: var(--text2); background: var(--bg); font-size: 13px; line-height: 1.5;
+      }
+      body.cs-dragging { cursor: row-resize; user-select: none; }
+      body.cs-dragging #cs-frame { pointer-events: none; }
+
+      /* --- comment rows --- */
+      .cs-empty { padding: 28px 22px; text-align: center; color: var(--text2); font-size: 13px; line-height: 1.55; }
+      .cs-row { display: flex; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
+      .cs-row:hover { background: var(--hover); }
+      .cs-row-sel { background: var(--sel); }
+      .cs-row-sel:hover { background: var(--sel); }
+      .cs-av { width: 36px; height: 36px; border-radius: 50%; flex: 0 0 auto; background: var(--chip); object-fit: cover; }
+      .cs-main { flex: 1; min-width: 0; }
+      .cs-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; font-size: 12px; color: var(--text2); margin-bottom: 3px; }
+      .cs-author { font-weight: 600; color: var(--text); }
+      .cs-chan { cursor: pointer; }
+      .cs-author.cs-chan:hover { text-decoration: underline; }
+      .cs-av.cs-chan:hover { filter: brightness(1.1); }
+      .cs-badge { text-transform: uppercase; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: var(--chip); color: var(--text2); }
+      .cs-text { font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+      .cs-hl { background: var(--hl); color: var(--hl-text); border-radius: 2px; padding: 0 1px; }
+      .cs-open { flex: 0 0 auto; align-self: flex-start; border: none; background: transparent; color: var(--text2); cursor: pointer; font-size: 13px; padding: 2px 6px; border-radius: 6px; }
+      .cs-open:hover { background: var(--chip-hover); color: var(--text); }
+    </style>
+  </head>
+  <body>
+    <header id="cs-header">
+      <img id="cs-thumb" alt="" />
+      <div id="cs-headmain">
+        <div id="cs-title">Comments</div>
+        <div id="cs-controls">
+          <input id="cs-q" type="text" placeholder="Word or phrase…" autocomplete="off" spellcheck="false" />
+          <select id="cs-order" title="Which comments to scan first">
+            <option value="relevance">Top</option>
+            <option value="time">Newest</option>
+          </select>
+          <label class="cs-check" title="Also search inside reply threads (slower, uses more API quota)"><input id="cs-replies" type="checkbox" /> Replies too</label>
+          <button id="cs-go" class="cs-btn">Search</button>
+          <button id="cs-stop" class="cs-btn" style="display: none">Stop</button>
+        </div>
+        <div id="cs-quota" class="cs-quota"></div>
+      </div>
+    </header>
+    <div id="cs-status"></div>
+    <div id="cs-split">
+      <div id="cs-list"><div class="cs-empty">Type a word or phrase, then <b>Search</b> to scan every public comment on this video. Click any match to open the real comment below, where you can Like or Reply as normal.</div></div>
+      <div id="cs-divider" title="Drag to resize"></div>
+      <div id="cs-bottom">
+        <div id="cs-placeholder">Click a matching comment above to open it here — the real YouTube page, scrolled right to that comment.</div>
+        <iframe id="cs-frame" name="syf-embed" referrerpolicy="no-referrer-when-downgrade" allow="autoplay; encrypted-media; fullscreen; picture-in-picture"></iframe>
+      </div>
+    </div>
+    <script src="search.js"></script>
+  </body>
+</html>

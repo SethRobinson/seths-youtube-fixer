@@ -1,9 +1,14 @@
 import {
   SETTINGS_KEY,
   DEFAULT_SETTINGS,
+  DEFAULT_SCAN_CAP,
+  MIN_SCAN_CAP,
+  MAX_SCAN_CAP,
+  DEFAULT_DAILY_QUOTA,
   type SyfSettings,
   type SyfMessage,
   type LogResult,
+  type QuotaResult,
 } from '../common/messages';
 import {
   type ActionLogEntry,
@@ -16,14 +21,20 @@ import {
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const apiKey = $<HTMLInputElement>('apiKey');
+const toggleKey = $<HTMLButtonElement>('toggleKey');
 const ttlInput = $<HTMLInputElement>('ttlDays');
 const maxVideosInput = $<HTMLInputElement>('maxVideos');
+const scanCapInput = $<HTMLInputElement>('scanCap');
 const hideShorts = $<HTMLInputElement>('hideShorts');
 const savedMsg = $<HTMLSpanElement>('savedMsg');
 const logEl = $<HTMLDivElement>('log');
 const logStatus = $<HTMLDivElement>('logStatus');
 const cacheSizeEl = $<HTMLElement>('cacheSize');
 const cacheBar = $<HTMLElement>('cacheBar');
+const dailyQuotaInput = $<HTMLInputElement>('dailyQuota');
+const quotaText = $<HTMLElement>('quotaText');
+const quotaBar = $<HTMLElement>('quotaBar');
+const resetQuotaLink = $<HTMLAnchorElement>('resetQuota');
 
 const esc = (s: unknown) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -40,14 +51,31 @@ async function initSettings() {
   maxVideosInput.min = String(MIN_CACHE_CAP);
   maxVideosInput.max = String(MAX_CACHE_CAP);
   maxVideosInput.value = String(s.maxCacheVideos ?? DEFAULT_CACHE_CAP);
+  scanCapInput.min = String(MIN_SCAN_CAP);
+  scanCapInput.max = String(MAX_SCAN_CAP);
+  scanCapInput.value = String(s.commentScanCap ?? DEFAULT_SCAN_CAP);
+  dailyQuotaInput.value = String(s.apiDailyQuota ?? DEFAULT_DAILY_QUOTA);
   hideShorts.checked = !!s.hideShorts;
 }
+
+// Reveal/hide the API key (masked by default so it isn't shoulder-surfed).
+toggleKey.addEventListener('click', () => {
+  const revealing = apiKey.type === 'password';
+  apiKey.type = revealing ? 'text' : 'password';
+  toggleKey.textContent = revealing ? 'Hide' : 'Show';
+});
 
 $<HTMLButtonElement>('save').addEventListener('click', async () => {
   const ttl = parseFloat(ttlInput.value);
   const capRaw = parseInt(maxVideosInput.value, 10);
   const cap = Number.isFinite(capRaw) ? Math.min(Math.max(capRaw, MIN_CACHE_CAP), MAX_CACHE_CAP) : DEFAULT_CACHE_CAP;
   maxVideosInput.value = String(cap); // reflect the clamped value back to the field
+  const scanRaw = parseInt(scanCapInput.value, 10);
+  const scanCap = Number.isFinite(scanRaw) ? Math.min(Math.max(scanRaw, MIN_SCAN_CAP), MAX_SCAN_CAP) : DEFAULT_SCAN_CAP;
+  scanCapInput.value = String(scanCap); // reflect the clamped value back to the field
+  const dqRaw = parseInt(dailyQuotaInput.value, 10);
+  const dailyQuota = Number.isFinite(dqRaw) && dqRaw > 0 ? dqRaw : DEFAULT_DAILY_QUOTA;
+  dailyQuotaInput.value = String(dailyQuota);
   // Serialized merge in the SW so we don't clobber concurrent writers.
   await chrome.runtime.sendMessage({
     type: 'SYF_PATCH_SETTINGS',
@@ -55,12 +83,21 @@ $<HTMLButtonElement>('save').addEventListener('click', async () => {
       apiKey: apiKey.value.trim(),
       feedbackTtlDays: Number.isFinite(ttl) && ttl > 0 ? ttl : 7,
       maxCacheVideos: cap,
+      commentScanCap: scanCap,
+      apiDailyQuota: dailyQuota,
       hideShorts: hideShorts.checked,
     },
   } as SyfMessage);
   savedMsg.textContent = 'Saved';
   setTimeout(() => (savedMsg.textContent = ''), 1500);
   void renderCacheSize(); // lowering the cap may have evicted entries — refresh the readout
+  void renderQuota(); // the daily-quota limit may have changed — refresh the gauge
+});
+
+resetQuotaLink.addEventListener('click', async (e) => {
+  e.preventDefault();
+  await chrome.runtime.sendMessage({ type: 'SYF_RESET_QUOTA' } as SyfMessage);
+  void renderQuota();
 });
 
 $<HTMLButtonElement>('reset').addEventListener('click', async () => {
@@ -71,6 +108,7 @@ $<HTMLButtonElement>('reset').addEventListener('click', async () => {
   await initSettings();
   await renderLog();
   await renderCacheSize();
+  await renderQuota();
   savedMsg.textContent = 'Reset';
   setTimeout(() => (savedMsg.textContent = ''), 1500);
 });
@@ -163,6 +201,26 @@ async function renderCacheSize(): Promise<void> {
   }
 }
 
+async function renderQuota(): Promise<void> {
+  try {
+    const r = (await chrome.runtime.sendMessage({ type: 'SYF_GET_QUOTA' } as SyfMessage)) as QuotaResult | undefined;
+    if (!r?.ok) {
+      quotaText.textContent = '';
+      return;
+    }
+    const used = r.used;
+    const limit = Math.max(1, r.limit);
+    const remaining = Math.max(0, limit - used);
+    const pct = Math.min(100, (used / limit) * 100);
+    quotaBar.style.width = pct + '%';
+    quotaBar.style.background = pct >= 90 ? '#cc0000' : pct >= 70 ? '#e8a000' : 'var(--accent)';
+    quotaText.textContent = `≈ ${used.toLocaleString()} of ${limit.toLocaleString()} units used today · about ${remaining.toLocaleString()} left (estimate of this extension’s calls).`;
+  } catch {
+    quotaText.textContent = '';
+  }
+}
+
 void initSettings();
 void renderLog();
 void renderCacheSize();
+void renderQuota();

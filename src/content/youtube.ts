@@ -61,6 +61,20 @@ function applySettings(s: SyfSettings): void {
   settings = s;
   document.documentElement.classList.toggle('syf-hide-shorts', !!s.hideShorts);
   updateHistoryButton();
+  updateFindCommentsButton();
+}
+
+// "Find in comments" is a normal (ready) button once an API key exists; it stays
+// grayed (the "unavailable" look) only until a key is entered — clicking the gray
+// one opens settings to add the key.
+function updateFindCommentsButton(): void {
+  const b = buttons['find-comments'];
+  if (!b) return;
+  const hasKey = !!settings.apiKey;
+  b.dataset.state = hasKey ? 'ready' : 'disabled';
+  b.title = hasKey
+    ? 'Search all public comments and replies on this video.'
+    : 'Add a YouTube Data API key (in settings) to search comments.';
 }
 
 function updateHistoryButton(): void {
@@ -163,20 +177,79 @@ function showToast(message: string): void {
   }, 6500);
 }
 
-// --- promise-based replay through the MAIN-world bridge ---
-const pending = new Map<string, (r: any) => void>();
-function replay(token: string, mode: 'apply' | 'undo'): Promise<any> {
-  return new Promise((resolve) => {
-    const requestId = crypto.randomUUID?.() ?? String(Math.random());
-    pending.set(requestId, resolve);
-    window.postMessage({ __syf: true, dir: 'to-page', type: 'REPLAY', token, mode, requestId }, location.origin);
-    setTimeout(() => {
-      if (pending.has(requestId)) {
-        pending.delete(requestId);
-        resolve({ ok: false, error: 'timeout' });
-      }
-    }, 12000);
-  });
+// --- authenticated feedback submission (POST /youtubei/v1/feedback) ---
+// This used to live in the MAIN-world page bridge, where it was reachable (and forgeable)
+// by any script on the page. It now runs HERE, in the isolated world: we read SAPISID from
+// document.cookie (the same value the page sees — it isn't HttpOnly) and build the
+// SAPISIDHASH ourselves. The page's PUBLIC innertube config (api key + client context)
+// arrives via a YT_CONFIG message from the bridge. A page-world script has no way to
+// trigger this, which closes the forgeable-REPLAY write primitive.
+const YT_ORIGIN = 'https://www.youtube.com';
+let ytConfig: { apiKey?: string; context?: unknown; clientName?: unknown; clientVersion?: unknown } | null = null;
+
+function getCookie(name: string): string {
+  const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : '';
+}
+async function sha1Hex(s: string): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+async function sapisidHash(): Promise<string> {
+  const sap = getCookie('SAPISID') || getCookie('__Secure-3PAPISID') || getCookie('__Secure-1PAPISID');
+  const ts = Math.floor(Date.now() / 1000);
+  return `SAPISIDHASH ${ts}_${await sha1Hex(`${ts} ${sap} ${YT_ORIGIN}`)}`;
+}
+
+// The bridge loads before us but ytcfg may not be populated yet, so poll for the config
+// until it arrives (then stop). ytConfig persists across SPA navigations.
+function requestConfig(): void {
+  window.postMessage({ __syf: true, dir: 'to-page', type: 'REQUEST_CONFIG' }, location.origin);
+}
+let cfgTries = 0;
+const cfgTimer = setInterval(() => {
+  if (ytConfig || cfgTries++ > 20) clearInterval(cfgTimer);
+  else requestConfig();
+}, 500);
+requestConfig();
+
+async function submitFeedback(token: string): Promise<any> {
+  // Give a just-loaded page a moment to deliver its config before giving up.
+  for (let i = 0; i < 25 && !ytConfig?.context; i++) await new Promise((r) => setTimeout(r, 100));
+  const cfg = ytConfig;
+  if (!cfg?.context) return { ok: false, error: 'no-config' };
+  try {
+    const res = await fetch(`${YT_ORIGIN}/youtubei/v1/feedback?key=${cfg.apiKey}&prettyPrint=false`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: await sapisidHash(),
+        'X-Origin': YT_ORIGIN,
+        'X-Goog-AuthUser': '0',
+        'X-Youtube-Client-Name': String(cfg.clientName ?? 1),
+        'X-Youtube-Client-Version': String(cfg.clientVersion ?? ''),
+      },
+      body: JSON.stringify({
+        context: cfg.context,
+        feedbackTokens: [token],
+        isFeedbackTokenUnencrypted: false,
+        shouldMerge: false,
+      }),
+    });
+    const json = await res.json().catch(() => null);
+    return { ok: res.ok, status: res.status, json };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+// `mode` is unused now (kept for call-site clarity); a 12s guard keeps the UI from hanging.
+function replay(token: string, _mode: 'apply' | 'undo'): Promise<any> {
+  return Promise.race([
+    submitFeedback(token),
+    new Promise<any>((resolve) => setTimeout(() => resolve({ ok: false, error: 'timeout' }), 12000)),
+  ]);
 }
 function replayOk(res: any): boolean {
   return !!(res?.ok && (res?.json?.feedbackResponses?.[0]?.isProcessed ?? true));
@@ -337,9 +410,15 @@ function onClick(action: string): void {
   if (action === 'find-comments') {
     if (!settings.apiKey) {
       showToast('A YouTube Data API key is needed to search comments — opening settings…');
-      chrome.runtime?.sendMessage?.({ type: 'SYF_OPEN_OPTIONS' } as SyfMessage).catch(() => {});
+      openSettingsDialog();
     } else {
-      showToast('Comment search is coming soon (your API key is set).');
+      chrome.runtime
+        ?.sendMessage?.({
+          type: 'SYF_OPEN_COMMENT_SEARCH',
+          videoId: current.videoId || getVideoId() || '',
+          title: current.title,
+        } as SyfMessage)
+        .catch(() => {});
     }
     return;
   }
@@ -364,6 +443,7 @@ function buildBar(): HTMLElement {
     buttons[def.action] = btn;
   }
   updateHistoryButton();
+  updateFindCommentsButton();
   return bar;
 }
 
@@ -463,14 +543,9 @@ window.addEventListener('message', (e: MessageEvent) => {
       current = { videoId: d.videoId, channelId: d.channelId, channelName: d.channelName, title: d.title };
       void refreshAvailability();
       break;
-    case 'REPLAY_RESULT': {
-      const resolve = d.requestId && pending.get(d.requestId);
-      if (resolve) {
-        pending.delete(d.requestId);
-        resolve(d.result);
-      }
+    case 'YT_CONFIG':
+      ytConfig = { apiKey: d.apiKey, context: d.context, clientName: d.clientName, clientVersion: d.clientVersion };
       break;
-    }
     case 'NATIVE_ACTION': {
       const i = d.info || {};
       chrome.runtime

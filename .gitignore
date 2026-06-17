@@ -4,6 +4,7 @@ dist-tsc/
 test-results/
 playwright-report/
 .test-profile/
+releases/
 *.log
 .DS_Store
 

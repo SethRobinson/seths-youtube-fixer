@@ -15,20 +15,58 @@ import {
   SETTINGS_KEY,
   DEFAULT_SETTINGS,
   ALL_STORAGE_KEYS,
+  QUOTA_KEY,
+  DEFAULT_DAILY_QUOTA,
   type SyfMessage,
   type SyfSettings,
   type HistoryResult,
+  type CsComment,
+  type CsThread,
+  type CommentsPageResult,
+  type RepliesPageResult,
+  type QuotaResult,
 } from '../common/messages';
 
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('[SYF] installed:', details.reason);
+  void syncIframeRuleset();
 });
+chrome.runtime.onStartup.addListener(() => void syncIframeRuleset());
+
+// The static ruleset `syf_iframe` (rules/iframe-rules.json) strips X-Frame-Options/CSP so
+// the comment-search window can frame the real watch page. That's a powerful, global change,
+// so it ships DISABLED and we enable it only while a comment-search window is actually open —
+// shrinking the exposure window from "the whole time the extension is installed" to "while
+// you're searching comments." We derive the desired state from whether any comments/search.html
+// tab exists, so it self-heals across the ephemeral SW's restarts (the enabled-state persists).
+const SEARCH_PAGE_PREFIX = chrome.runtime.getURL('comments/search.html');
+async function setIframeRuleset(on: boolean): Promise<void> {
+  try {
+    await chrome.declarativeNetRequest.updateEnabledRulesets(
+      on ? { enableRulesetIds: ['syf_iframe'] } : { disableRulesetIds: ['syf_iframe'] }
+    );
+  } catch (e) {
+    console.error('[SYF] setIframeRuleset failed', e);
+  }
+}
+// Reconcile from ground truth: the rule should be enabled iff a comments/search.html tab is
+// open. Used to turn it back OFF when the window closes and to self-heal on SW wake. (Enabling
+// on open is done directly in the SYF_OPEN_COMMENT_SEARCH handler — relying on this to ENABLE
+// would race the just-created tab before its URL is queryable.)
+async function syncIframeRuleset(): Promise<void> {
+  const tabs = await chrome.tabs.query({}).catch(() => [] as chrome.tabs.Tab[]);
+  await setIframeRuleset(tabs.some((t) => t.url?.startsWith(SEARCH_PAGE_PREFIX)));
+}
+chrome.windows.onRemoved.addListener(() => void syncIframeRuleset());
+chrome.tabs.onRemoved.addListener(() => void syncIframeRuleset());
+void syncIframeRuleset(); // reconcile whenever the SW wakes
 
 // MV3 SWs are ephemeral; flush any pending throttled cache write before suspension.
 // Best-effort (async may not finish) — a lost write is ≤ one throttle window of
 // re-capturable captures.
 chrome.runtime.onSuspend.addListener(() => {
   void flushCache();
+  void flushQuota();
 });
 
 // In-memory copies so lookups (every navigation) don't re-parse storage. The SW
@@ -37,8 +75,9 @@ chrome.runtime.onSuspend.addListener(() => {
 let cacheMem: FeedbackCache | null = null;
 let logMem: ActionLogEntry[] | null = null;
 let settingsMem: SyfSettings | null = null;
+let quotaMem: { ptDate: string; used: number } | null = null;
 function invalidateMem(): void {
-  cacheMem = logMem = settingsMem = null;
+  cacheMem = logMem = settingsMem = quotaMem = null;
 }
 
 async function loadCache(): Promise<FeedbackCache> {
@@ -74,6 +113,62 @@ function patchSettings(patch: Partial<SyfSettings>): Promise<void> {
     const s = await loadSettings();
     settingsMem = { ...s, ...patch };
     await chrome.storage.local.set({ [SETTINGS_KEY]: settingsMem });
+  });
+}
+
+// --- API quota estimate (local) ---------------------------------------------------------
+// The Data API can't tell a key its remaining quota, so we count our own calls: each
+// commentThreads.list / comments.list read costs 1 unit. Resets at midnight Pacific (like
+// Google's quota), keyed by the Pacific calendar date. Writes are throttled/coalesced.
+function ptDate(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
+}
+async function loadQuota(): Promise<{ ptDate: string; used: number }> {
+  if (!quotaMem) {
+    const o = await chrome.storage.local.get(QUOTA_KEY);
+    quotaMem = (o[QUOTA_KEY] as { ptDate: string; used: number }) ?? { ptDate: ptDate(), used: 0 };
+  }
+  const today = ptDate();
+  if (quotaMem.ptDate !== today) quotaMem = { ptDate: today, used: 0 }; // new Pacific day → reset
+  return quotaMem;
+}
+let quotaDirty = false;
+let quotaFlushTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleQuotaFlush(): void {
+  quotaDirty = true;
+  if (quotaFlushTimer) return;
+  quotaFlushTimer = setTimeout(() => {
+    quotaFlushTimer = null;
+    void flushQuota();
+  }, 2_000);
+}
+async function flushQuota(): Promise<void> {
+  if (!quotaDirty || !quotaMem) return;
+  quotaDirty = false;
+  await chrome.storage.local.set({ [QUOTA_KEY]: quotaMem });
+}
+// Count API units (serialized so concurrent searches can't lose increments).
+function bumpQuota(units = 1): Promise<void> {
+  return enqueue(async () => {
+    const q = await loadQuota();
+    q.used += units;
+    quotaMem = q;
+    scheduleQuotaFlush();
+  });
+}
+async function getQuotaState(): Promise<QuotaResult> {
+  const [q, settings] = await Promise.all([loadQuota(), loadSettings()]);
+  return { ok: true, used: q.used, limit: settings.apiDailyQuota ?? DEFAULT_DAILY_QUOTA, ptDate: q.ptDate };
+}
+function resetQuota(): Promise<void> {
+  return enqueue(async () => {
+    if (quotaFlushTimer) {
+      clearTimeout(quotaFlushTimer);
+      quotaFlushTimer = null;
+    }
+    quotaDirty = false;
+    quotaMem = { ptDate: ptDate(), used: 0 };
+    await chrome.storage.local.set({ [QUOTA_KEY]: quotaMem });
   });
 }
 
@@ -275,6 +370,100 @@ async function handleHistory(action: 'toggle' | 'state'): Promise<HistoryResult>
   }
 }
 
+// --- Feature: Find in comments (YouTube Data API v3, read-only, with the user's key) ---
+// The SW makes the googleapis.com calls (it has the host permission and full
+// cross-origin fetch) so the key never enters the page's MAIN world and we dodge
+// youtube.com CORS/CSP. The content-script panel drives pagination + filtering.
+const GAPI = 'https://www.googleapis.com/youtube/v3';
+
+function csNorm(c: any, isReply: boolean): CsComment {
+  const s = c?.snippet ?? {};
+  return {
+    id: c?.id ?? '',
+    parentId: s.parentId,
+    isReply,
+    author: s.authorDisplayName ?? '',
+    authorChannelId: s.authorChannelId?.value,
+    authorAvatar: s.authorProfileImageUrl,
+    text: s.textDisplay ?? s.textOriginal ?? '',
+    likeCount: typeof s.likeCount === 'number' ? s.likeCount : 0,
+    publishedAt: s.publishedAt ?? '',
+  };
+}
+
+function csMapError(status: number, body: any): { error: string; reason?: string } {
+  const e = body?.error;
+  const reason: string | undefined = e?.errors?.[0]?.reason || e?.status;
+  const msg: string = e?.message || '';
+  if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded')
+    return { error: 'Your YouTube API daily quota is used up — it resets at midnight Pacific, or use another key.', reason };
+  if (reason === 'rateLimitExceeded' || reason === 'userRateLimitExceeded')
+    return { error: 'Hit the YouTube API rate limit — wait a few seconds and try again.', reason };
+  if (reason === 'commentsDisabled') return { error: 'Comments are turned off for this video.', reason };
+  if (reason === 'videoNotFound') return { error: 'The API couldn’t find this video.', reason };
+  if (/API key not valid/i.test(msg) || reason === 'keyInvalid')
+    return { error: 'Your API key is invalid or not authorized for the YouTube Data API. Check it in settings.', reason: 'keyInvalid' };
+  if (status === 403)
+    return { error: msg || 'The API rejected the request (403). Is the YouTube Data API v3 enabled for this key?', reason: reason || 'forbidden' };
+  if (status === 400) return { error: msg || 'The API rejected the request (400).', reason: reason || 'badRequest' };
+  return { error: msg || `YouTube API error (${status}).`, reason };
+}
+
+async function fetchCommentsPage(
+  videoId: string,
+  pageToken: string | undefined,
+  order: 'relevance' | 'time'
+): Promise<CommentsPageResult> {
+  const key = (await loadSettings()).apiKey?.trim();
+  if (!key) return { ok: false, error: 'No API key set yet. Add one in settings.', reason: 'noKey' };
+  const u = new URL(`${GAPI}/commentThreads`);
+  u.searchParams.set('part', 'snippet,replies');
+  u.searchParams.set('videoId', videoId);
+  u.searchParams.set('maxResults', '100');
+  u.searchParams.set('order', order === 'time' ? 'time' : 'relevance');
+  u.searchParams.set('textFormat', 'plainText');
+  u.searchParams.set('key', key);
+  if (pageToken) u.searchParams.set('pageToken', pageToken);
+  try {
+    const res = await fetch(u.toString());
+    void bumpQuota(); // a response means the API processed the request (1 unit)
+    const body = await res.json().catch(() => null);
+    if (!res.ok) return { ok: false, ...csMapError(res.status, body) };
+    const threads: CsThread[] = (body?.items ?? []).map((it: any) => {
+      const top = csNorm(it?.snippet?.topLevelComment, false);
+      const replies: CsComment[] = (it?.replies?.comments ?? []).map((r: any) => csNorm(r, true));
+      const totalReplyCount =
+        typeof it?.snippet?.totalReplyCount === 'number' ? it.snippet.totalReplyCount : replies.length;
+      return { top, replies, totalReplyCount, hasMoreReplies: totalReplyCount > replies.length };
+    });
+    return { ok: true, threads, nextPageToken: body?.nextPageToken };
+  } catch {
+    return { ok: false, error: 'Couldn’t reach the YouTube API (network error).', reason: 'network' };
+  }
+}
+
+async function fetchRepliesPage(parentId: string, pageToken: string | undefined): Promise<RepliesPageResult> {
+  const key = (await loadSettings()).apiKey?.trim();
+  if (!key) return { ok: false, error: 'No API key set.', reason: 'noKey' };
+  const u = new URL(`${GAPI}/comments`);
+  u.searchParams.set('part', 'snippet');
+  u.searchParams.set('parentId', parentId);
+  u.searchParams.set('maxResults', '100');
+  u.searchParams.set('textFormat', 'plainText');
+  u.searchParams.set('key', key);
+  if (pageToken) u.searchParams.set('pageToken', pageToken);
+  try {
+    const res = await fetch(u.toString());
+    void bumpQuota(); // a response means the API processed the request (1 unit)
+    const body = await res.json().catch(() => null);
+    if (!res.ok) return { ok: false, ...csMapError(res.status, body) };
+    const replies: CsComment[] = (body?.items ?? []).map((r: any) => csNorm(r, true));
+    return { ok: true, replies, nextPageToken: body?.nextPageToken };
+  } catch {
+    return { ok: false, error: 'Couldn’t reach the YouTube API (network error).', reason: 'network' };
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return false; // ignore anything not from our own contexts
   switch (msg?.type) {
@@ -433,6 +622,35 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
 
     case 'SYF_STATS':
       loadCache().then((c) => sendResponse({ ok: true, stats: c.stats }));
+      return true;
+
+    case 'SYF_OPEN_COMMENT_SEARCH': {
+      const u =
+        chrome.runtime.getURL('comments/search.html') +
+        `?v=${encodeURIComponent(msg.videoId)}&title=${encodeURIComponent(msg.title || '')}`;
+      // A normal browser window (title bar + chrome), modestly sized — not a big popup.
+      // Enable the header-strip ruleset now so the bottom pane can frame the real watch page;
+      // syncIframeRuleset (on window/tab close) turns it back off when no search tab remains.
+      void setIframeRuleset(true);
+      chrome.windows.create({ url: u, type: 'normal', width: 940, height: 820 });
+      sendResponse({ ok: true });
+      return false;
+    }
+
+    case 'SYF_COMMENTS_PAGE':
+      fetchCommentsPage(msg.videoId, msg.pageToken, msg.order === 'time' ? 'time' : 'relevance').then(sendResponse);
+      return true;
+
+    case 'SYF_COMMENT_REPLIES':
+      fetchRepliesPage(msg.parentId, msg.pageToken).then(sendResponse);
+      return true;
+
+    case 'SYF_GET_QUOTA':
+      getQuotaState().then(sendResponse);
+      return true;
+
+    case 'SYF_RESET_QUOTA':
+      resetQuota().then(() => sendResponse({ ok: true }));
       return true;
 
     default:

@@ -1,63 +1,121 @@
-# Seth's YouTube Fixer
+<div align="center">
+  <img src="docs/images/icon128.png" width="96" height="96" alt="Seth's YouTube Fixer icon" />
+  <h1>Seth's YouTube Fixer</h1>
+  <p><b>Take back control of YouTube.</b> Tell it what you don't want, wipe what you just watched, and search every comment on a video — all from one little bar under the player.</p>
+</div>
 
-A Manifest V3 Chromium extension that adds power-user controls to YouTube:
+<p align="center">
+  <img src="docs/images/feature-bar.png" width="640" alt="The Seth's YouTube Fixer button bar under a YouTube video" />
+</p>
 
-- **Less like this** — send YouTube's real *Not interested* feedback for the current video.
-- **Don't recommend channel** — send YouTube's real *Don't recommend channel* feedback.
-- **Wipe history** — fast-delete recent YouTube activity via Google My Activity.
-- **Find in comments** — search all public comments/replies via the YouTube Data API.
+A free Chrome/Brave extension. No accounts, no tracking, no servers — everything happens in your own browser.
 
-> Status: scaffold + automated test harness in place. Features are being built one
-> vertical slice at a time. See `DESIGN` discussion in the project notes.
+---
 
-## Develop
+## What it does
+
+### 👎 Less like this
+One click sends YouTube's **real** "Not interested" signal for the video you're watching, so its recommendations actually learn. Click again to undo.
+
+### 🚫 Don't recommend channel
+One click sends YouTube's **real** "Don't recommend channel" signal for the creator. Click again to undo.
+
+> These aren't fake — the buttons reuse YouTube's own feedback actions. A button stays gray until YouTube has shown you that video/channel as a recommendation card (that's where the real action lives). Just browse Home or the sidebar for a moment and it lights up.
+
+### 🧹 Wipe history
+Delete the last 15 / 30 / 60 / 120 minutes (or a custom window) of YouTube watch &amp; search history from your Google account. You get to **review the exact list before anything is deleted**.
+
+### ⏸ Pause history
+Flip YouTube's watch-history recording on or off without digging through settings.
+
+### 🔎 Find in comments
+Search **every** public comment and reply on a video — something YouTube itself won't let you do. Click a match and the **real YouTube page** opens right below it, scrolled to that comment, so you can Like or Reply normally.
+
+<p align="center">
+  <img src="docs/images/feature-find-comments.png" width="480" alt="Searching every comment on a video" />
+  &nbsp;
+  <img src="docs/images/feature-comments-live.png" width="430" alt="Clicking a match opens the real comment below" />
+</p>
+
+### 🩳 Hide Shorts
+A single toggle hides Shorts shelves, cards, and the sidebar link across YouTube.
+
+---
+
+## Install it (Chrome or Brave)
+
+This extension isn't on the Chrome Web Store, so you install it as an "unpacked" extension. It takes about a minute and is completely standard.
+
+1. **Get the extension folder.**
+   - Download the latest `seths-youtube-fixer-vX.X.X.zip` (or build it yourself — see [below](#build-it-yourself)) and **unzip it** to a folder you'll keep (e.g. `Documents\SethsYoutubeFixer`). Don't delete this folder later — the browser loads from it.
+2. Open your extensions page:
+   - **Chrome:** go to `chrome://extensions`
+   - **Brave:** go to `brave://extensions`
+3. Turn on **Developer mode** (toggle in the top-right corner).
+4. Click **Load unpacked** and select the unzipped folder.
+5. Done! Click the puzzle-piece 🧩 icon in the toolbar and **pin** "Seth's YouTube Fixer" so you can reach its settings easily.
+
+Open any YouTube video and you'll see the new bar under the player.
+
+> **Updating later:** download/build a new zip, unzip it over the same folder (replace files), then click the **↻ reload** icon on the extension's card at `chrome://extensions`.
+
+---
+
+## Optional: turn on comment search
+
+"Find in comments" needs a free **YouTube Data API key** (this is the only feature that does — everything else works with no setup). It's your own key, used only from your browser, on your own daily quota.
+
+1. Click the extension's **ℹ Info** button (or the toolbar icon → **Settings**).
+2. Follow the step-by-step instructions there to create a free key (~3 minutes in the Google Cloud Console).
+3. Paste the key in and **Save**. It's stored only on your computer and hidden by default — click **Show** to check it.
+
+Settings also show an **estimate of how much of your daily API quota you've used today** (it resets at midnight Pacific, like Google's), and the search window keeps a running tally — so you can see how much headroom you have. You can set how many comments each search loads (default 50,000) there too.
+
+---
+
+## Privacy
+
+- **Everything stays in your browser.** No analytics, no telemetry, no third-party servers.
+- The extension stores, locally: captured feedback actions, video/channel IDs &amp; titles, your API key, and a short-lived in-memory comment cache.
+- It **never** stores your Google password, cookies, or session tokens.
+- The only network calls are to **YouTube** (your own logged-in session, the same actions the site already offers) and **Google's API** (only for comment search, with your key).
+- **Reset data for this extension** (in Settings) erases all of the above at any time.
+
+---
+
+## Build it yourself
+
+You need [Node.js](https://nodejs.org/) (18+).
 
 ```bash
 npm install
-npm run build      # bundle src/ -> dist/ (one-shot)
+```
+
+**To produce an installable zip** (Windows): double-click **`build_release.bat`**. It builds the extension and writes `releases\seths-youtube-fixer-vX.X.X.zip`, ready to unzip and "Load unpacked," or to upload to the Chrome Web Store dashboard.
+
+**Or build the folder manually:**
+
+```bash
+npm run build      # bundles src/ -> dist/   (load dist/ as unpacked)
 npm run watch      # rebuild on change
 npm run typecheck  # tsc --noEmit
 ```
 
-Load `dist/` as an unpacked extension at `chrome://extensions` (Developer mode on),
-or just run the tests, which load it automatically.
+### Developing &amp; testing
 
-## Test (dynamic, in your real Chrome)
-
-Chrome 149 hard-blocks the `--load-extension` command-line switch, so we don't load
-the extension that way. Instead we use a **dedicated dev profile** (`.test-profile/`,
-gitignored) into which the extension is loaded **once** via the UI; it then auto-loads
-from `dist/` on every launch. We spawn that Chrome with a remote-debugging port and
-attach with Playwright over CDP — so your normal Chrome/profile is never touched, and
-the same dev profile holds your YouTube login for the login-gated features.
-
-### One-time setup
+There's a CDP-based harness that drives the extension in a real, signed-in Chrome profile (Chrome blocks the `--load-extension` switch, so a dedicated dev profile is loaded once via the UI and reused).
 
 ```bash
-npm install
-npm run build
-npm run setup     # opens the dev profile at chrome://extensions
+npm run setup      # one-time: opens a dev profile at chrome://extensions to Load unpacked + sign in
+npm run reload     # rebuild + hot-reload into the running Chrome
+npm run drive      # rebuild + reload + quick smoke (injects the bar, screenshots)
+npm test           # full Playwright suite
 ```
 
-In the window that opens:
-1. Toggle on **Developer mode**, click **Load unpacked**, choose the `dist/` folder.
-2. Open `youtube.com` and sign in once.
+Architecture, design decisions, and status live in **[AGENTS.md](AGENTS.md)**.
 
-Leave that window open while developing.
+---
 
-### Day-to-day
-
-```bash
-npm run reload    # rebuild + hot-reload the extension into the running Chrome
-npm run drive     # rebuild + reload + quick smoke (injects bar, screenshots)
-npm test          # rebuild + reload + full Playwright suite
-```
-
-Environment overrides: `SYF_PROFILE` (profile dir), `SYF_CDP_PORT` (default 9222),
-`SYF_CHROME` (chrome.exe path).
-
-## Privacy
-
-All data stays local. No telemetry, no third-party servers. The extension stores
-feedback endpoints, video/channel IDs, titles, your API key, and an optional comment
-cache — and never stores Google cookies, session tokens, or credentials.
+<div align="center">
+  by <b>Seth A. Robinson</b> · <a href="https://www.rtsoft.com">rtsoft.com</a>
+</div>

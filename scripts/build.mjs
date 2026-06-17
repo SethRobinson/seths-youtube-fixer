@@ -14,9 +14,11 @@ const entryPoints = {
   'content/youtube': 'src/content/youtube.ts',
   'content/myactivity': 'src/content/myactivity.ts',
   'content/page-bridge': 'src/content/page-bridge.ts',
+  'content/embed': 'src/content/embed.ts',
   'options/options': 'src/options/options.ts',
   'popup/popup': 'src/popup/popup.ts',
   'wipe/wipe': 'src/wipe/wipe.ts',
+  'comments/search': 'src/comments/search.ts',
 };
 
 const staticFiles = [
@@ -25,6 +27,8 @@ const staticFiles = [
   ['src/options/options.html', 'options/options.html'],
   ['src/popup/popup.html', 'popup/popup.html'],
   ['src/wipe/wipe.html', 'wipe/wipe.html'],
+  ['src/comments/search.html', 'comments/search.html'],
+  ['src/rules/iframe-rules.json', 'rules/iframe-rules.json'],
 ];
 
 async function copyStatic() {
@@ -47,11 +51,14 @@ const buildOpts = {
   bundle: true,
   format: 'iife',
   target: 'chrome120',
-  sourcemap: true,
+  // Ship no sourcemaps in a release build (smaller package, original TS not exposed);
+  // keep them for dev. build_release.bat sets SYF_RELEASE=1. Code is left
+  // unminified so the published package stays easy to review.
+  sourcemap: process.env.SYF_RELEASE === '1' ? false : true,
   logLevel: 'info',
-  // Dev-only globals (window.__syfDebug / __syfSubmitFeedback) are compiled out
-  // unless SYF_DEV=1 — they expose an authenticated account-write primitive +
-  // captured tokens to the page, so they must not ship in normal builds.
+  // Dev-only read hook (window.__syfDebug, a token-index peek for tests) is compiled out
+  // unless SYF_DEV=1, so it never ships in normal builds. (The old __syfSubmitFeedback
+  // account-write hook was removed — feedback submission now lives in the isolated world.)
   define: { __SYF_DEV__: process.env.SYF_DEV === '1' ? 'true' : 'false' },
 };
 

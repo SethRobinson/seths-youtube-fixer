@@ -35,8 +35,12 @@
       }
       .card > .desc { color: #5f6368; font-size: 13px; margin: 0 0 12px; }
       label { display: block; margin: 12px 0 4px; font-weight: 600; }
-      input[type='text'] { width: 100%; padding: 9px; border: 1px solid #ccd0d8; border-radius: 8px; font: inherit; }
+      input[type='text'], input[type='password'] { width: 100%; padding: 9px; border: 1px solid #ccd0d8; border-radius: 8px; font: inherit; }
       input[type='number'] { width: 120px; padding: 9px; border: 1px solid #ccd0d8; border-radius: 8px; font: inherit; }
+      .key-row { display: flex; gap: 8px; align-items: stretch; }
+      .key-row input { flex: 1; min-width: 0; }
+      .key-toggle { background: #eef0f4; color: #0f0f0f; border: 1px solid #ccd0d8; border-radius: 8px; padding: 0 14px; font-weight: 600; cursor: pointer; }
+      .key-toggle:hover { filter: brightness(0.97); }
       small { color: #5f6368; display: block; margin-top: 4px; }
       a { color: var(--accent); }
       .help { background: #eef3ff; border: 1px solid #d6e0ff; border-radius: 10px; padding: 12px 16px; margin-top: 10px; font-size: 13px; }
@@ -74,8 +78,11 @@
     <section class="card">
       <h2>🔎 Comment search</h2>
       <label for="apiKey">YouTube Data API key</label>
-      <input id="apiKey" type="text" placeholder="AIza…" autocomplete="off" spellcheck="false" />
-      <small>Used only for “Find in comments”. Stored locally in this browser; never synced or sent anywhere except Google’s API.</small>
+      <div class="key-row">
+        <input id="apiKey" type="password" placeholder="AIza…" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" />
+        <button type="button" id="toggleKey" class="key-toggle" aria-label="Show or hide the API key">Show</button>
+      </div>
+      <small>Used only for “Find in comments”. Hidden by default; click <b>Show</b> to reveal it. Stored locally in this browser; never synced or sent anywhere except Google’s API.</small>
       <div class="help">
         <b>How to get a free API key (~3 min):</b>
         <ol>
@@ -86,6 +93,24 @@
         </ol>
         <small>You don’t need to set up the OAuth consent screen — this key only reads public data. It uses your own Google quota (10,000 units/day). A key can’t be obtained automatically — it must be created in your account.</small>
       </div>
+      <label for="scanCap">Comments to load per search</label>
+      <input id="scanCap" type="number" min="1000" max="200000" step="1000" />
+      <small>“Find in comments” loads up to this many comments (and replies) before pausing with a <b>Load more</b> button. Comments aren’t stored anywhere — this only bounds one search’s time and API quota. Default 50,000; max 200,000.</small>
+    </section>
+
+    <section class="card">
+      <h2>📊 API usage today (estimate)</h2>
+      <p class="desc">Roughly how much of your daily YouTube Data API quota this extension has used today — it resets at midnight Pacific, like Google’s. The API can’t report exact remaining quota to a key, so this counts <em>this extension’s</em> calls; other apps using the same key aren’t included.</p>
+      <div class="meter"><span id="quotaBar"></span></div>
+      <small id="quotaText">Loading…</small>
+      <label for="dailyQuota">Your daily quota (units)</label>
+      <input id="dailyQuota" type="number" min="1" step="100" />
+      <small>Default 10,000. Raise this only if you’ve requested a quota increase in Google Cloud.</small>
+      <p style="margin: 12px 0 0; font-size: 13px;">
+        <a href="https://console.cloud.google.com/apis/api/youtube.googleapis.com/quotas" target="_blank" rel="noopener">See exact usage in Google Cloud →</a>
+        &nbsp;·&nbsp;
+        <a id="resetQuota" href="#">Reset counter</a>
+      </p>
     </section>
 
     <section class="card">

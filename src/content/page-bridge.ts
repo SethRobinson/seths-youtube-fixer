@@ -332,66 +332,37 @@ window.fetch = function (this: unknown, ...args: any[]) {
   return p;
 };
 
-// --- real feedback submission (POST /youtubei/v1/feedback) ---
-const YT_ORIGIN = 'https://www.youtube.com';
-
-function getCookie(name: string): string {
-  const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
-  return m ? decodeURIComponent(m[1]) : '';
-}
-
-async function sha1Hex(s: string): Promise<string> {
-  const d = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(s));
-  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-// YouTube authenticates innertube writes with: SAPISIDHASH <ts>_<sha1(ts SAPISID origin)>
-async function sapisidHash(): Promise<string> {
-  const sap =
-    getCookie('SAPISID') || getCookie('__Secure-3PAPISID') || getCookie('__Secure-1PAPISID');
-  const ts = Math.floor(Date.now() / 1000);
-  const h = await sha1Hex(`${ts} ${sap} ${YT_ORIGIN}`);
-  return `SAPISIDHASH ${ts}_${h}`;
-}
-
+// The page's innertube config feeds the isolated content script's authenticated feedback
+// POST — which it performs itself, reading SAPISID from document.cookie. No feedback
+// submission (and no SAPISIDHASH signing) happens in this page world anymore.
 function ytcfgGet(k: string): any {
   const c: any = (window as any).ytcfg;
   return c?.get?.(k) ?? c?.data_?.[k];
 }
 
-async function submitFeedback(token: string): Promise<any> {
-  try {
-    const apiKey = ytcfgGet('INNERTUBE_API_KEY');
-    const res = await origFetch(`${YT_ORIGIN}/youtubei/v1/feedback?key=${apiKey}&prettyPrint=false`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: await sapisidHash(),
-        'X-Origin': YT_ORIGIN,
-        'X-Goog-AuthUser': '0',
-        'X-Youtube-Client-Name': String(ytcfgGet('INNERTUBE_CONTEXT_CLIENT_NAME') ?? 1),
-        'X-Youtube-Client-Version': String(ytcfgGet('INNERTUBE_CONTEXT_CLIENT_VERSION') ?? ''),
-      },
-      body: JSON.stringify({
-        context: ytcfgGet('INNERTUBE_CONTEXT'),
-        feedbackTokens: [token],
-        isFeedbackTokenUnencrypted: false,
-        shouldMerge: false,
-      }),
-    });
-    const json = await res.json().catch(() => null);
-    return { ok: res.ok, status: res.status, json };
-  } catch (e) {
-    return { ok: false, error: String(e) };
-  }
+// Hand the page's PUBLIC innertube config (api key + client context — not secrets) to the
+// isolated content script so IT can perform the authenticated feedback POST itself, reading
+// SAPISID straight from document.cookie. Submission no longer happens in this page world, so a
+// hostile page-world script can't forge a message to write feedback with the user's session.
+// Posted on demand (the isolated script polls REQUEST_CONFIG until it has it, since ytcfg may
+// not be ready yet and the isolated script loads after this one).
+function postConfig(): void {
+  const apiKey = ytcfgGet('INNERTUBE_API_KEY');
+  const context = ytcfgGet('INNERTUBE_CONTEXT');
+  if (!apiKey || !context) return;
+  post('YT_CONFIG', {
+    apiKey,
+    context,
+    clientName: ytcfgGet('INNERTUBE_CONTEXT_CLIENT_NAME') ?? 1,
+    clientVersion: ytcfgGet('INNERTUBE_CONTEXT_CLIENT_VERSION') ?? '',
+  });
 }
 
-// Dev-only test hooks. These expose an authenticated account-write primitive and
-// captured tokens to the page, so they are compiled out unless SYF_DEV=1.
+// Dev-only READ hook for tests (token-index peek). The account-write primitive that used
+// to live here is gone — feedback submission moved to the isolated content script — so the
+// page world no longer exposes any way to write feedback. Compiled out unless SYF_DEV=1.
 declare const __SYF_DEV__: boolean;
 if (__SYF_DEV__) {
-  (window as any).__syfSubmitFeedback = submitFeedback;
   (window as any).__syfDebug = {
     size: () => tokenIndex.size,
     firstToken: () => tokenIndex.keys().next().value,
@@ -399,19 +370,18 @@ if (__SYF_DEV__) {
   };
 }
 
-// Real submission requested by the isolated content script (button UI path).
+// Requests from the isolated content script. Both are read-only / non-authenticated:
+// re-capture a clicked video, or (re)send the page's innertube config. The bridge no
+// longer exposes a feedback-submit primitive to the page world — that moved to the
+// isolated world so a page-world script can't forge a message to write feedback.
 window.addEventListener('message', (e: MessageEvent) => {
   if (e.source !== window) return;
   const d: any = e.data;
   if (!d || d.__syf !== true || d.dir !== 'to-page') return;
   if (d.type === 'CAPTURE_VIDEO' && typeof d.videoId === 'string') {
     captureVideo(d.videoId);
-    return;
-  }
-  if (d.type === 'REPLAY') {
-    submitFeedback(d.token).then((result) =>
-      post('REPLAY_RESULT', { action: d.action, mode: d.mode, requestId: d.requestId, result })
-    );
+  } else if (d.type === 'REQUEST_CONFIG') {
+    postConfig();
   }
 });
 
