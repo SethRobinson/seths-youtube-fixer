@@ -4,7 +4,7 @@ REM  build_release.bat  -  Build Seth's YouTube Fixer and pack it into a zip
 REM                       ready to install (Load unpacked) or upload to the
 REM                       Chrome Web Store.
 REM
-REM  Output:  releases\seths-youtube-fixer-v<version>.zip   (zips the dist/ folder)
+REM  Output:  releases\seths-youtube-fixer-latest.zip   (zips the dist/ folder)
 REM
 REM  Just double-click this file, or run it from a terminal.
 REM ============================================================================
@@ -37,9 +37,10 @@ for /f "usebackq delims=" %%v in (`node -p "require('./dist/manifest.json').vers
 if "%VERSION%"=="" set "VERSION=0.0.0"
 echo Version: %VERSION%
 
-REM --- 4. Pack dist\ into releases\seths-youtube-fixer-v<version>.zip ---------
+REM --- 4. Pack dist\ into releases\seths-youtube-fixer-latest.zip -------------
+REM Stable, unversioned name so the download link (and the upload script) never change.
 if not exist "releases" mkdir "releases"
-set "ZIP=releases\seths-youtube-fixer-v%VERSION%.zip"
+set "ZIP=releases\seths-youtube-fixer-latest.zip"
 if exist "%ZIP%" del /q "%ZIP%"
 
 echo Packing %ZIP% ...

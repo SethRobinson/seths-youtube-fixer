@@ -9,9 +9,6 @@
 </p>
 
 A free Chrome and Brave extension. No accounts, no tracking, no servers. Everything happens in your own browser.
-
-I doubt this will ever be on the Chrome Web Store, so if you want this, you'll have to install it as an "unpacked" extension. See below for instructions.
-
 ---
 
 ## What it does
@@ -42,13 +39,19 @@ Search **every** public comment and reply on a video, something YouTube itself w
 ### Hide Shorts
 A single toggle hides Shorts shelves, cards, and the sidebar link across YouTube.
 
+## Beware
+Some of these features are 'brittle', if youtube.com changes its internal APIs or page structure, uh, this may break.  No guarantees I'll be around to fix it, but, hey, the source is right here.
+
+Because of this I sort of doubt this would be accepted into the Chrome store as an official extension, but it's easy to install yourself.  Don't
 ---
 
 ## Install it (Chrome or Brave)
 
-This extension isn't on the Chrome Web Store, so you install it as an "unpacked" extension. It takes about a minute and is completely standard.
+This extension isn't on the Chrome Web Store, so you have install it as an "unpacked" extension. If you overwrite the same folder with a new version later, it updates in place and keeps your settings.
 
-1. **Get the extension folder.** Download the latest `seths-youtube-fixer-vX.X.X.zip` (or build it yourself, see [below](#build-it-yourself)) and **unzip it** to a folder you'll keep, for example `Documents\SethsYoutubeFixer`. Don't delete this folder later, because the browser loads from it.
+Safety: I'm Seth A. Robinson, long time indie developer and creator of a ton of free software.  But you should probably get in the habbit of checking the source of any extension you install, and maybe even building it yourself from the source.
+
+1. **Get the extension folder.** Download [**seths-youtube-fixer-latest.zip**](https://www.rtsoft.com/files/seths-youtube-fixer-latest.zip) (or build it yourself, see [below](#build-it-yourself)) and **unzip it** to a folder you'll keep, for example `Documents\SethsYoutubeFixer`. Don't delete this folder later, because the browser loads from it.
 2. Open your extensions page:
    - **Chrome:** go to `chrome://extensions`
    - **Brave:** go to `brave://extensions`
@@ -94,7 +97,7 @@ You need [Node.js](https://nodejs.org/) (18+).
 npm install
 ```
 
-**To produce an installable zip** (Windows): double-click **`build_release.bat`**. It builds the extension and writes `releases\seths-youtube-fixer-vX.X.X.zip`, ready to unzip and "Load unpacked", or to upload to the Chrome Web Store dashboard.
+**To produce an installable zip** (Windows): double-click **`build_release.bat`**. It builds the extension and writes `releases\seths-youtube-fixer-latest.zip`, ready to unzip and "Load unpacked", or to upload to the Chrome Web Store dashboard.
 
 **Or build the folder manually:**
 

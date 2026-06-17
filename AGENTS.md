@@ -127,7 +127,7 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
   unused) and `activeTab` (redundant with `tabs` + host perms); manifest now requests only
   `storage`/`unlimitedStorage`/`tabs`/`declarativeNetRequest`. Added **`build_release.bat`**
   (sets `SYF_RELEASE=1`, which makes `build.mjs` drop sourcemaps — code stays unminified for
-  review — then zips `dist/` → `releases/seths-youtube-fixer-vX.zip`, manifest at zip root).
+  review — then zips `dist/` → `releases/seths-youtube-fixer-latest.zip`, manifest at zip root).
   Added a privacy-policy draft (`PRIVACY.md`) and two reports under `docs/`:
   `CHROME_WEB_STORE_REVIEW.md` (verdict: fine to install privately; a store listing still
   needs a hosted privacy policy + the framing/internal-endpoint automation is a real
