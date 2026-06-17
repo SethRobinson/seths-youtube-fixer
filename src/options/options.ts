@@ -26,7 +26,7 @@ const ttlInput = $<HTMLInputElement>('ttlDays');
 const maxVideosInput = $<HTMLInputElement>('maxVideos');
 const scanCapInput = $<HTMLInputElement>('scanCap');
 const hideShorts = $<HTMLInputElement>('hideShorts');
-const savedMsg = $<HTMLSpanElement>('savedMsg');
+const savedMsg = $<HTMLDivElement>('savedMsg');
 const logEl = $<HTMLDivElement>('log');
 const logStatus = $<HTMLDivElement>('logStatus');
 const cacheSizeEl = $<HTMLElement>('cacheSize');
@@ -65,33 +65,74 @@ toggleKey.addEventListener('click', () => {
   toggleKey.textContent = revealing ? 'Hide' : 'Show';
 });
 
-$<HTMLButtonElement>('save').addEventListener('click', async () => {
+// Settings auto-save the moment each field is committed (checkboxes on toggle; number/text
+// fields on blur or Enter — the native `change` event), so there's no Save button to miss.
+// Clamping happens on commit, not per-keystroke, so editing a number field doesn't fight you
+// mid-typing and lowering the cache cap only evicts once. The SW does a serialized partial
+// merge (SYF_PATCH_SETTINGS), so saving one field at a time can't clobber concurrent writers.
+let savedTimer: ReturnType<typeof setTimeout> | undefined;
+function flashSaved(msg = 'Saved'): void {
+  savedMsg.textContent = '✓ ' + msg;
+  savedMsg.classList.add('show');
+  clearTimeout(savedTimer);
+  savedTimer = setTimeout(() => savedMsg.classList.remove('show'), 1400);
+}
+
+async function patchSettings(patch: Partial<SyfSettings>): Promise<void> {
+  await chrome.runtime.sendMessage({ type: 'SYF_PATCH_SETTINGS', patch } as SyfMessage);
+  flashSaved();
+}
+
+function commitTtl(): void {
   const ttl = parseFloat(ttlInput.value);
-  const capRaw = parseInt(maxVideosInput.value, 10);
-  const cap = Number.isFinite(capRaw) ? Math.min(Math.max(capRaw, MIN_CACHE_CAP), MAX_CACHE_CAP) : DEFAULT_CACHE_CAP;
+  const v = Number.isFinite(ttl) && ttl > 0 ? ttl : 7;
+  ttlInput.value = String(v); // reflect the validated value back to the field
+  void patchSettings({ feedbackTtlDays: v });
+}
+
+async function commitMaxVideos(): Promise<void> {
+  const raw = parseInt(maxVideosInput.value, 10);
+  const cap = Number.isFinite(raw) ? Math.min(Math.max(raw, MIN_CACHE_CAP), MAX_CACHE_CAP) : DEFAULT_CACHE_CAP;
   maxVideosInput.value = String(cap); // reflect the clamped value back to the field
-  const scanRaw = parseInt(scanCapInput.value, 10);
-  const scanCap = Number.isFinite(scanRaw) ? Math.min(Math.max(scanRaw, MIN_SCAN_CAP), MAX_SCAN_CAP) : DEFAULT_SCAN_CAP;
-  scanCapInput.value = String(scanCap); // reflect the clamped value back to the field
-  const dqRaw = parseInt(dailyQuotaInput.value, 10);
-  const dailyQuota = Number.isFinite(dqRaw) && dqRaw > 0 ? dqRaw : DEFAULT_DAILY_QUOTA;
-  dailyQuotaInput.value = String(dailyQuota);
-  // Serialized merge in the SW so we don't clobber concurrent writers.
-  await chrome.runtime.sendMessage({
-    type: 'SYF_PATCH_SETTINGS',
-    patch: {
-      apiKey: apiKey.value.trim(),
-      feedbackTtlDays: Number.isFinite(ttl) && ttl > 0 ? ttl : 7,
-      maxCacheVideos: cap,
-      commentScanCap: scanCap,
-      apiDailyQuota: dailyQuota,
-      hideShorts: hideShorts.checked,
-    },
-  } as SyfMessage);
-  savedMsg.textContent = 'Saved';
-  setTimeout(() => (savedMsg.textContent = ''), 1500);
+  await patchSettings({ maxCacheVideos: cap });
   void renderCacheSize(); // lowering the cap may have evicted entries — refresh the readout
+}
+
+function commitScanCap(): void {
+  const raw = parseInt(scanCapInput.value, 10);
+  const scanCap = Number.isFinite(raw) ? Math.min(Math.max(raw, MIN_SCAN_CAP), MAX_SCAN_CAP) : DEFAULT_SCAN_CAP;
+  scanCapInput.value = String(scanCap); // reflect the clamped value back to the field
+  void patchSettings({ commentScanCap: scanCap });
+}
+
+async function commitDailyQuota(): Promise<void> {
+  const raw = parseInt(dailyQuotaInput.value, 10);
+  const dailyQuota = Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_DAILY_QUOTA;
+  dailyQuotaInput.value = String(dailyQuota);
+  await patchSettings({ apiDailyQuota: dailyQuota });
   void renderQuota(); // the daily-quota limit may have changed — refresh the gauge
+}
+
+function commitApiKey(): void {
+  void patchSettings({ apiKey: apiKey.value.trim() });
+}
+
+hideShorts.addEventListener('change', () => void patchSettings({ hideShorts: hideShorts.checked }));
+ttlInput.addEventListener('change', commitTtl);
+maxVideosInput.addEventListener('change', () => void commitMaxVideos());
+scanCapInput.addEventListener('change', commitScanCap);
+dailyQuotaInput.addEventListener('change', () => void commitDailyQuota());
+
+// The API key gets a debounced backstop on `input` in addition to commit-on-`change`, so a
+// paste-then-close (closing the Info dialog without ever blurring the field) still persists.
+let keyTimer: ReturnType<typeof setTimeout> | undefined;
+apiKey.addEventListener('input', () => {
+  clearTimeout(keyTimer);
+  keyTimer = setTimeout(commitApiKey, 800);
+});
+apiKey.addEventListener('change', () => {
+  clearTimeout(keyTimer);
+  commitApiKey();
 });
 
 resetQuotaLink.addEventListener('click', async (e) => {
@@ -109,8 +150,7 @@ $<HTMLButtonElement>('reset').addEventListener('click', async () => {
   await renderLog();
   await renderCacheSize();
   await renderQuota();
-  savedMsg.textContent = 'Reset';
-  setTimeout(() => (savedMsg.textContent = ''), 1500);
+  flashSaved('Reset');
 });
 
 // --- action log ---

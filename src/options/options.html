@@ -16,7 +16,8 @@
         background: #f1f3f6;
         line-height: 1.5;
       }
-      h1 { font-size: 22px; margin: 0 0 18px; }
+      h1 { font-size: 22px; margin: 0 0 4px; }
+      .auto-note { color: #5f6368; font-size: 13px; margin: 0 0 18px; }
       .card {
         background: #fff;
         border: 1px solid #e3e6ec;
@@ -52,8 +53,24 @@
       button { padding: 10px 20px; border: none; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
       button.danger { background: #cc0000; }
       button:hover { filter: brightness(1.05); }
-      .saved { color: #1a8f3c; margin-left: 12px; font-weight: 600; }
-      .savebar { display: flex; align-items: center; }
+      /* auto-save confirmation toast (fixed, fades in/out) */
+      .toast {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        background: #1a8f3c;
+        color: #fff;
+        font-weight: 600;
+        padding: 8px 14px;
+        border-radius: 20px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+        opacity: 0;
+        transform: translateY(8px);
+        transition: opacity 0.18s ease, transform 0.18s ease;
+        pointer-events: none;
+        z-index: 10;
+      }
+      .toast.show { opacity: 1; transform: translateY(0); }
       .meter { background: #eef0f4; border-radius: 8px; height: 8px; overflow: hidden; margin: 8px 0 4px; }
       .meter > span { display: block; height: 100%; background: var(--accent); width: 0; }
       /* action log */
@@ -77,6 +94,7 @@
   </head>
   <body>
     <h1>Seth's YouTube Fixer</h1>
+    <p class="auto-note">Changes are saved automatically.</p>
 
     <section class="card">
       <h2>🔎 Comment search</h2>
@@ -138,13 +156,6 @@
     </section>
 
     <section class="card">
-      <div class="savebar">
-        <button id="save">Save settings</button>
-        <span id="savedMsg" class="saved"></span>
-      </div>
-    </section>
-
-    <section class="card">
       <h2>♻️ Reset</h2>
       <p class="desc">Deletes this extension’s local data — captured tokens, the action log, and all settings (including any “Don’t show this again” choices). Does not touch your YouTube account.</p>
       <button id="reset" class="danger">Reset data for this extension</button>
@@ -158,6 +169,7 @@
     </section>
 
     <footer>by <b>Seth A. Robinson</b> · <a href="https://www.rtsoft.com" target="_blank" rel="noopener">rtsoft.com</a></footer>
+    <div id="savedMsg" class="toast" role="status" aria-live="polite"></div>
     <script src="options.js"></script>
   </body>
 </html>

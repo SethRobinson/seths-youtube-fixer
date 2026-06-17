@@ -118,6 +118,13 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     `SYF_DO_REPLAY` relayed through a YouTube tab), **Reset data** (`SYF_RESET` clears
     `ALL_STORAGE_KEYS` incl. dismissed warnings), and **credits (Seth A. Robinson / rtsoft.com)**.
     (The standalone `src/log/` page was removed.)
+  - **Settings auto-save (2026-06-17):** the options page has **no Save button** — each field patches
+    via `SYF_PATCH_SETTINGS` the moment it's committed (checkboxes on `change`/toggle; number/text
+    fields on `change` = blur/Enter, clamped on commit so editing doesn't fight you mid-typing and
+    lowering the cache cap evicts only once; the API key also gets a debounced `input` backstop so a
+    paste-then-close-the-dialog still persists). A small "✓ Saved" toast confirms each write; a
+    "Changes are saved automatically." subtitle sits under the `<h1>`. The old bottom save card was
+    removed.
   - **Find in comments** opens settings/options (with a toast) when no API key is set.
   - **Hide Shorts** setting toggles `html.syf-hide-shorts`; CSS hides Shorts shelves/cards/nav (live
     via `storage.onChanged`). Settings include `hideShorts`, `feedbackTtlDays`, `maxCacheVideos`,
