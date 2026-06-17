@@ -9,25 +9,31 @@
 </p>
 
 A free Chrome and Brave extension. No accounts, no tracking, no servers. Everything happens in your own browser.
+
 ---
 
 ## What it does
 
 ### Less like this
+
 One click sends YouTube's **real** "Not interested" signal for the video you're watching, so its recommendations actually learn. Click again to undo.
 
 ### Don't recommend channel
+
 One click sends YouTube's **real** "Don't recommend channel" signal for the creator. Click again to undo.
 
 > These aren't fake. The buttons reuse YouTube's own feedback actions. A button stays gray until YouTube has shown you that video or channel as a recommendation card, which is where the real action lives. Browse Home or the sidebar for a moment and it lights up.
 
 ### Wipe history
+
 Delete the last 15, 30, 60, or 120 minutes (or a custom window) of YouTube watch and search history from your Google account. You get to **review the exact list before anything is deleted**.
 
 ### Pause history
+
 Turn YouTube's watch-history recording on or off without digging through settings.
 
 ### Find in comments
+
 Search **every** public comment and reply on a video, something YouTube itself won't let you do. Click a match and the **real YouTube page** opens right below it, scrolled to that comment, so you can Like or Reply normally.
 
 <p align="center">
@@ -37,22 +43,26 @@ Search **every** public comment and reply on a video, something YouTube itself w
 </p>
 
 ### Hide Shorts
+
 A single toggle hides Shorts shelves, cards, and the sidebar link across YouTube.
 
 ## Beware
+
 Some of these features are 'brittle', if youtube.com changes its internal APIs or page structure, uh, this may break.  No guarantees I'll be around to fix it, but, hey, the source is right here.
 
-Because of this I sort of doubt this would be accepted into the Chrome store as an official extension, but it's easy to install yourself.  Don't
+Because of this I sort of doubt this would be accepted into the Chrome store as an official extension, but it's easy to install yourself.
+
 ---
 
 ## Install it (Chrome or Brave)
 
-This extension isn't on the Chrome Web Store, so you have install it as an "unpacked" extension. If you overwrite the same folder with a new version later, it updates in place and keeps your settings.
+This extension isn't on the Chrome Web Store, so you have install it as an "unpacked" extension.  It's pretty easy to do.
 
-Safety: I'm Seth A. Robinson, long time indie developer and creator of a ton of free software.  But you should probably get in the habbit of checking the source of any extension you install, and maybe even building it yourself from the source.
+**SAFETY:** I'm Seth A. Robinson, long time indie developer and creator of a ton of free software.  But you should probably get in the habbit of checking the source of any extension you install, and maybe even building it yourself from the source.
 
 1. **Get the extension folder.** Download [**seths-youtube-fixer-latest.zip**](https://www.rtsoft.com/files/seths-youtube-fixer-latest.zip) (or build it yourself, see [below](#build-it-yourself)) and **unzip it** to a folder you'll keep, for example `Documents\SethsYoutubeFixer`. Don't delete this folder later, because the browser loads from it.
 2. Open your extensions page:
+
    - **Chrome:** go to `chrome://extensions`
    - **Brave:** go to `brave://extensions`
 3. Turn on **Developer mode** (toggle in the top-right corner).
