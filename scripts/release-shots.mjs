@@ -88,15 +88,27 @@ await sp.screenshot({ path: 'test-results/comment-search-window.png' });
 console.log('saved test-results/comment-search-window.png');
 
 if (best.rows > 0) {
-  await sp.locator('.cs-row').first().click();
-  await wait(14000);
+  // Click a TOP-LEVEL comment match (no "reply" badge) so the bottom pane shows it clearly.
+  const topRows = sp.locator('.cs-row').filter({ hasNot: sp.locator('.cs-badge') });
+  const target = (await topRows.count()) ? topRows.first() : sp.locator('.cs-row').first();
+  await target.click();
+  await wait(15000); // let the framed page load + embed.ts center the highlighted comment
   const src = (await sp.locator('#cs-frame').getAttribute('src')) || '';
   const ytFrame = sp.frames().find((f) => /youtube\.com\/watch/.test(f.url()));
   let info = {};
-  if (ytFrame) info = await ytFrame.evaluate(() => ({ signedIn: !!document.querySelector('#avatar-btn, #masthead img'), scrollY: Math.round(window.scrollY), threads: document.querySelectorAll('ytd-comment-thread-renderer').length })).catch(() => ({}));
+  if (ytFrame)
+    info = await ytFrame
+      .evaluate(() => {
+        const h = document.querySelector('ytd-comment-view-model[linked], ytd-comment-thread-renderer[linked], #comments [highlighted]');
+        const topFrac = h ? Math.round((h.getBoundingClientRect().top / window.innerHeight) * 100) / 100 : null;
+        return { signedIn: !!document.querySelector('#avatar-btn, #masthead img'), highlighted: !!h, highlightTopFrac: topFrac, threads: document.querySelectorAll('ytd-comment-thread-renderer').length };
+      })
+      .catch(() => ({}));
   const framed = !!ytFrame && (info.threads || 0) > 0;
-  console.log(`IFRAME RULE: framed=${framed} lcInSrc=${/[?&]lc=/.test(src)} ${JSON.stringify(info)}`);
+  const shown = info.highlighted && info.highlightTopFrac != null && info.highlightTopFrac > -0.1 && info.highlightTopFrac < 0.85;
+  console.log(`IFRAME: framed=${framed} lcInSrc=${/[?&]lc=/.test(src)} ${JSON.stringify(info)}`);
   console.log(framed ? '  ✓ dynamic header-strip rule works (real page framed + signed in)' : '  ✗ frame did NOT load');
+  console.log(shown ? '  ✓ clicked comment is highlighted and visible in the bottom pane' : '  ✗ highlighted comment NOT clearly visible');
   await sp.screenshot({ path: 'test-results/comment-search-bottom.png' });
   console.log('saved test-results/comment-search-bottom.png');
 }

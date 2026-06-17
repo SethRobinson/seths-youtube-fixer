@@ -161,6 +161,8 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
   "Reset counter"; the search window shows a compact readout (refreshed after each search). It's an
   estimate (doesn't see other consumers of the same key). `QUOTA_KEY` is in `ALL_STORAGE_KEYS` (cleared
   by Reset). Validated end-to-end: counter == actual API calls, both UIs render, limit + reset work.
+  The **"Replies too" checkbox now persists** (`settings.commentSearchReplies`): restored when the
+  search window opens, saved (via `SYF_PATCH_SETTINGS`) whenever toggled.
 - **Security & known residuals** (from the 2026-06-16 adversarial review; fixes landed for storage
   races, the debug globals, CSP, sender check, and transient-vs-permanent history backoff). Still
   open, low-risk for personal single-account English use — revisit before any wider distribution:

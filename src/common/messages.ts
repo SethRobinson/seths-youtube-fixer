@@ -160,6 +160,7 @@ export interface SyfSettings {
   feedbackTtlDays?: number; // how long a cached feedback token is considered usable
   maxCacheVideos?: number; // LRU cap for the feedback cache, applied to both videos and channels
   commentScanCap?: number; // "Find in comments": comments loaded per scan before pausing for "Load more"
+  commentSearchReplies?: boolean; // "Find in comments": remembered state of the "Replies too" checkbox
   apiDailyQuota?: number; // your YouTube Data API daily quota (units); for the "used today" gauge
   hideShorts?: boolean; // hide Shorts shelves/cards from feeds
   lastHistoryPaused?: boolean; // cached watch-history state for the bar toggle label
@@ -173,6 +174,7 @@ export const DEFAULT_SETTINGS: SyfSettings = {
   feedbackTtlDays: 7,
   maxCacheVideos: DEFAULT_CACHE_CAP,
   commentScanCap: DEFAULT_SCAN_CAP,
+  commentSearchReplies: false,
   apiDailyQuota: DEFAULT_DAILY_QUOTA,
   hideShorts: false,
 };

@@ -3,7 +3,7 @@
 // watch page, framed and scrolled to the clicked comment (header-stripped by our
 // declarativeNetRequest rule), so Like/Reply happen natively. Draggable divider.
 import { SETTINGS_KEY, DEFAULT_SCAN_CAP, MIN_SCAN_CAP, MAX_SCAN_CAP } from '../common/messages';
-import type { SyfMessage, CommentsPageResult, RepliesPageResult, CsComment, CsThread, QuotaResult } from '../common/messages';
+import type { SyfMessage, SyfSettings, CommentsPageResult, RepliesPageResult, CsComment, CsThread, QuotaResult } from '../common/messages';
 
 const params = new URLSearchParams(location.search);
 const videoId = params.get('v') || '';
@@ -28,7 +28,7 @@ async function updateQuota(): Promise<void> {
     const r = (await chrome.runtime.sendMessage({ type: 'SYF_GET_QUOTA' } as SyfMessage)) as QuotaResult | undefined;
     if (!r?.ok) return;
     const remaining = Math.max(0, r.limit - r.used);
-    quotaEl.textContent = `API quota today: ~${r.used.toLocaleString()} / ${r.limit.toLocaleString()} units used · ~${remaining.toLocaleString()} left (estimate)`;
+    quotaEl.textContent = `Google API quota today: ~${r.used.toLocaleString()} / ${r.limit.toLocaleString()} units used · ~${remaining.toLocaleString()} left (estimate)`;
   } catch {
     /* ignore */
   }
@@ -133,8 +133,10 @@ function showBelow(commentId: string, row: HTMLElement): void {
 // bounds one scan's time + API quota.
 let scanCap = DEFAULT_SCAN_CAP;
 chrome.storage.local.get(SETTINGS_KEY).then((o) => {
-  const v = (o[SETTINGS_KEY] as { commentScanCap?: number } | undefined)?.commentScanCap;
+  const s = o[SETTINGS_KEY] as SyfSettings | undefined;
+  const v = s?.commentScanCap;
   if (typeof v === 'number' && Number.isFinite(v)) scanCap = Math.min(Math.max(v, MIN_SCAN_CAP), MAX_SCAN_CAP);
+  if (typeof s?.commentSearchReplies === 'boolean') repliesChk.checked = s.commentSearchReplies; // restore the remembered toggle
 });
 const FRESH_MS = 5 * 60 * 1000;
 
@@ -381,6 +383,12 @@ qInput.addEventListener('keydown', (e) => {
 });
 stopBtn.addEventListener('click', () => {
   stop = true;
+});
+// Remember the "Replies too" choice across sessions (serialized merge in the SW).
+repliesChk.addEventListener('change', () => {
+  void chrome.runtime
+    .sendMessage({ type: 'SYF_PATCH_SETTINGS', patch: { commentSearchReplies: repliesChk.checked } } as SyfMessage)
+    .catch(() => {});
 });
 qInput.focus();
 void updateQuota();

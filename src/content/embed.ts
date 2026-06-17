@@ -28,19 +28,23 @@ if (window.top !== window.self && window.name === 'syf-embed') {
 
     if (hasLc && !revealed) {
       const comments = document.querySelector('#comments') as HTMLElement | null;
+      // YouTube marks the &lc= deep-linked comment with a `linked` attribute on the
+      // ytd-comment-view-model (the one shown under the "Highlighted comment/reply" header).
+      // (`[highlighted]` is an older marker, kept as a fallback.)
       const linked = document.querySelector(
-        'ytd-comment-thread-renderer[highlighted], ytd-comment-view-model[highlighted], #comments [highlighted]'
+        'ytd-comment-view-model[linked], ytd-comment-thread-renderer[linked], #comments [highlighted]'
       ) as HTMLElement | null;
       if (linked) {
         linked.scrollIntoView({ block: 'center' });
-        revealed = true; // found the exact comment — stop here
-      } else if (comments && comments.querySelector('ytd-comment-thread-renderer')) {
-        // Threads loaded but no explicit highlight marker — the linked comment is
-        // pinned at the top of #comments, so showing the section reveals it.
-        comments.scrollIntoView({ block: 'start' });
-        revealed = true;
+        revealed = true; // found and centered the exact comment — done
       } else if (comments) {
-        comments.scrollIntoView({ block: 'start' }); // not loaded yet — nudge the lazy-load
+        // Keep nudging #comments into view (triggers its lazy-load) AND keep polling for the
+        // highlighted comment: it renders a beat after the first threads do, and when the video
+        // has a separate pinned comment that one sits at the very top — so stopping at "threads
+        // exist" would leave us showing the pinned comment, not the one the user clicked.
+        comments.scrollIntoView({ block: 'start' });
+        // Fallback: if the highlight marker never appears (~5s), at least leave the section shown.
+        if (comments.querySelector('ytd-comment-thread-renderer') && ticks >= 12) revealed = true;
       }
     }
   };
