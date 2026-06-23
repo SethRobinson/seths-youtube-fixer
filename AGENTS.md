@@ -416,6 +416,9 @@ is unchanged). If `.test-profile/` is ever wiped, re-run `npm run setup` and Loa
 - No telemetry, no third-party servers; all data stays local. Never store Google
   cookies/session tokens/credentials. Never fabricate YouTube feedback. These are product
   requirements, not nice-to-haves.
+- **Never `git push` (or force-push / push tags) without Seth's explicit permission for that
+  specific push.** Approving a commit is NOT approval to push — ask each time. Committing
+  locally is fine when Seth asks; pushing to the remote always needs a separate go-ahead.
 
 ## Maintaining these files
 
