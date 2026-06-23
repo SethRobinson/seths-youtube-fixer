@@ -461,8 +461,15 @@ function findMount(): HTMLElement | null {
   return null;
 }
 
+// Tracks the videoId we last sent a SYF_LOOKUP for, so ensureBar()'s per-tick
+// schedule (MutationObserver / 3s poll / nav events) doesn't re-message the SW on
+// every frame while idle/scrolling — only on a genuine video change. WATCH_CONTEXT,
+// CAPTURE and NATIVE_ACTION still call refreshAvailability() directly when tokens change.
+let lastRefreshedVideoId: string | null = null;
+
 async function refreshAvailability(): Promise<void> {
   const videoId = getVideoId();
+  lastRefreshedVideoId = videoId;
   if (!buttons['nah'] || !buttons['hate-channel']) return;
   if (!videoId) {
     state.nah = {};
@@ -519,18 +526,30 @@ function ensureBar(): void {
   if (!videoId) {
     document.getElementById(BAR_ID)?.remove();
     current = {};
+    // Off a watch page: keep observing so we re-inject when the user navigates back.
+    observeForChanges();
     return;
   }
   if (videoId !== current.videoId) current = { videoId };
 
   if (!document.getElementById(BAR_ID)) {
     const mount = findMount();
-    if (!mount) return;
+    if (!mount) {
+      // Mount not in the DOM yet (hydrating) — keep observing until it appears.
+      observeForChanges();
+      return;
+    }
     mount.prepend(buildBar());
     console.log(TAG, 'bar injected for video', videoId);
     chrome.runtime?.sendMessage?.({ type: 'SYF_INJECTED', videoId } as SyfMessage).catch(() => {});
   }
-  void refreshAvailability();
+  // Bar is present for this video. Stop the expensive whole-document observation;
+  // the nav-event listeners + the 3s poll re-arm it after a navigation removes the
+  // bar (see observeForChanges / schedule). Without this, every scroll-driven DOM
+  // mutation kept firing schedule()/SW lookups for the whole session.
+  stopObserving();
+  // Only re-query the SW on a real video change, not on every schedule tick.
+  if (videoId !== lastRefreshedVideoId) void refreshAvailability();
 }
 
 // The action-log panel and Wipe-history panel now live in standalone extension
@@ -654,10 +673,33 @@ function schedule(): void {
   });
 }
 
+// The MutationObserver watches the whole document (subtree) so we notice the bar's
+// mount appearing late (hydration) or YouTube removing our bar. That observation is
+// expensive on a busy YouTube page, so it runs ONLY while the bar is missing:
+// observeForChanges() arms it, and ensureBar() calls stopObserving() once the bar is
+// in place. SPA navigations remove the bar and fire the nav events below (or the 3s
+// poll), which re-arm it.
 const observer = new MutationObserver(() => schedule());
-observer.observe(document.documentElement, { childList: true, subtree: true });
-window.addEventListener('yt-navigate-finish', schedule);
-document.addEventListener('yt-navigate-finish', schedule);
-window.addEventListener('yt-page-data-updated', schedule);
+let observing = false;
+function observeForChanges(): void {
+  if (observing) return;
+  observing = true;
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+}
+function stopObserving(): void {
+  if (!observing) return;
+  observing = false;
+  observer.disconnect();
+}
+// A navigation tears down our bar; re-arm the observer so we catch the new mount as
+// the page re-renders, then ensureBar() disconnects it again once the bar is in place.
+function onNav(): void {
+  observeForChanges();
+  schedule();
+}
+window.addEventListener('yt-navigate-finish', onNav);
+document.addEventListener('yt-navigate-finish', onNav);
+window.addEventListener('yt-page-data-updated', onNav);
 setInterval(schedule, 3000);
+observeForChanges();
 schedule();

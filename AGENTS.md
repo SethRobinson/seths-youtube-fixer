@@ -329,6 +329,29 @@ hard-gated to one item — that validated the `TmdDAd` RPC end-to-end), **verify
 (READ-ONLY: opens the options page and asserts each action-log row renders the channel name with
 correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
 
+- **Long-session performance (2026-06-23 — slow/laggy after hours on one page):** two
+  things grew/ran hot on an idle-or-scrolling watch page left open for ~2h. Fixed both
+  (surgical, behavior-preserving):
+  1. **Whole-document `MutationObserver` is now transient.** `youtube.ts` observed
+     `document.documentElement` `{subtree:true}` for the whole session; every scroll-driven
+     lazy-load mutation fired `schedule()` → `ensureBar()` → an unconditional
+     `refreshAvailability()` `SYF_LOOKUP` to the SW, so scrolling fought itself and the cost
+     rose as the DOM grew. Now the observer runs **only while the bar is missing**
+     (`observeForChanges`/`stopObserving`): `ensureBar()` disconnects it once the bar is in
+     place; nav events (`yt-navigate-finish`/`yt-page-data-updated` → `onNav`) and the 3s
+     poll re-arm it after a navigation removes the bar. `refreshAvailability()` is also gated
+     to fire only on a real videoId change (`lastRefreshedVideoId`) — `WATCH_CONTEXT`/
+     `CAPTURE`/`NATIVE_ACTION` still refresh directly when tokens change. Net: an idle/
+     scrolling watch page does ~no recurring work (no observation, no SW messages) until you
+     navigate.
+  2. **MAIN-world token maps are now LRU-capped.** `page-bridge.ts` `tokenIndex`/`undoIndex`/
+     `videoIndex` gained one entry per unique video seen and were never trimmed (a slow heap
+     leak over hours). Added `cappedSet()` (insertion-order eviction) with `INDEX_CAP=5000`
+     per map — they only ever need recently-seen videos. The SW cache keeps its own
+     configurable cap; this just bounds the in-page mirror.
+  Verified: `typecheck`+`build` green, `npm run drive` injects the 6-button bar + capture
+  path intact.
+
 ## Layout
 
 - `src/manifest.json` — MV3 manifest.

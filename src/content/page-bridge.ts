@@ -180,13 +180,26 @@ function extractTuples(root: any): any[] {
 
 // Index captured tokens so we can identify NATIVE feedback the user triggers
 // via YouTube's own menus (and offer the same logging/undo).
+// These only ever need RECENTLY-seen videos (native-action id + click-time capture
+// both concern videos currently on screen / just clicked), so cap them with
+// insertion-order LRU eviction. Without a cap they grow one entry per unique video
+// for the whole session — a slow heap leak over hours of browsing. The SW feedback
+// cache has its own (configurable) cap; this just bounds the in-page mirror.
+const INDEX_CAP = 5000;
+function cappedSet(map: Map<string, any>, key: string, value: any): void {
+  map.set(key, value);
+  if (map.size > INDEX_CAP) {
+    const oldest = map.keys().next().value; // Map preserves insertion order
+    if (oldest !== undefined) map.delete(oldest);
+  }
+}
 const tokenIndex = new Map<string, any>();
 const undoIndex = new Map<string, any>();
 const videoIndex = new Map<string, any>(); // videoId -> capture tuple, for click-time capture
 function indexTuple(t: any): void {
-  if (t.videoId) videoIndex.set(t.videoId, t);
+  if (t.videoId) cappedSet(videoIndex, t.videoId, t);
   if (t.notInterestedToken)
-    tokenIndex.set(t.notInterestedToken, {
+    cappedSet(tokenIndex, t.notInterestedToken, {
       type: 'notInterested',
       videoId: t.videoId,
       channelId: t.channelId,
@@ -196,9 +209,9 @@ function indexTuple(t: any): void {
       undoToken: t.notInterestedUndoToken,
     });
   if (t.notInterestedUndoToken)
-    undoIndex.set(t.notInterestedUndoToken, { type: 'notInterested', videoId: t.videoId, channelId: t.channelId });
+    cappedSet(undoIndex, t.notInterestedUndoToken, { type: 'notInterested', videoId: t.videoId, channelId: t.channelId });
   if (t.dontRecommendChannelToken)
-    tokenIndex.set(t.dontRecommendChannelToken, {
+    cappedSet(tokenIndex, t.dontRecommendChannelToken, {
       type: 'dontRecommendChannel',
       videoId: t.videoId,
       channelId: t.channelId,
@@ -208,7 +221,7 @@ function indexTuple(t: any): void {
       undoToken: t.dontRecommendChannelUndoToken,
     });
   if (t.dontRecommendChannelUndoToken)
-    undoIndex.set(t.dontRecommendChannelUndoToken, { type: 'dontRecommendChannel', videoId: t.videoId, channelId: t.channelId });
+    cappedSet(undoIndex, t.dontRecommendChannelUndoToken, { type: 'dontRecommendChannel', videoId: t.videoId, channelId: t.channelId });
 }
 
 // window.ytInitialData is FROZEN at the first full page load. After an SPA
