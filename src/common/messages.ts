@@ -41,6 +41,7 @@ export type SyfMessage =
   | { type: 'SYF_COMMENT_REPLIES'; parentId: string; pageToken?: string }
   | { type: 'SYF_GET_QUOTA' }
   | { type: 'SYF_RESET_QUOTA' }
+  | { type: 'SYF_ACCOUNT'; accountId: string }
   | { type: 'SYF_RESET' };
 
 export interface QuotaResult {
@@ -153,6 +154,12 @@ export const DEFAULT_DAILY_QUOTA = 10_000;
 // Google's quota). The API can't report remaining quota to a key, so we count our own calls.
 export const QUOTA_KEY = 'syf.quota';
 
+// The active YouTube account's opaque identity fingerprint (from ytcfg DATASYNC_ID), used only
+// to detect when the signed-in account changes. When it does, the SW clears the account-specific
+// feedback cache + action log so a token captured for the previous account can't be replayed
+// against the new one. Not a credential — never displayed.
+export const ACCOUNT_KEY = 'syf.account';
+
 export interface SyfSettings {
   apiKey?: string;
   wipePresetsMin?: number[];
@@ -180,4 +187,4 @@ export const DEFAULT_SETTINGS: SyfSettings = {
 };
 
 // Storage keys cleared by "Reset data for this extension".
-export const ALL_STORAGE_KEYS = [FEEDBACK_KEY, ACTIONLOG_KEY, SETTINGS_KEY, QUOTA_KEY];
+export const ALL_STORAGE_KEYS = [FEEDBACK_KEY, ACTIONLOG_KEY, SETTINGS_KEY, QUOTA_KEY, ACCOUNT_KEY];

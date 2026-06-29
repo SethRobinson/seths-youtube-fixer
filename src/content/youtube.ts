@@ -191,7 +191,14 @@ function showToast(message: string): void {
 // arrives via a YT_CONFIG message from the bridge. A page-world script has no way to
 // trigger this, which closes the forgeable-REPLAY write primitive.
 const YT_ORIGIN = 'https://www.youtube.com';
-let ytConfig: { apiKey?: string; context?: unknown; clientName?: unknown; clientVersion?: unknown } | null = null;
+let ytConfig: {
+  apiKey?: string;
+  context?: unknown;
+  clientName?: unknown;
+  clientVersion?: unknown;
+  accountId?: string;
+  authUser?: string;
+} | null = null;
 
 function getCookie(name: string): string {
   const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
@@ -219,6 +226,16 @@ const cfgTimer = setInterval(() => {
 }, 500);
 requestConfig();
 
+// Tell the SW which account is active so it can clear stale per-account tokens on a switch.
+// Deduped per page so re-posted config (every SPA nav) doesn't spam the SW; an empty id (e.g.
+// signed-out, or ytcfg field absent) is ignored so we behave exactly as before.
+let lastReportedAccount: string | null = null;
+function reportAccount(accountId?: string): void {
+  if (!accountId || accountId === lastReportedAccount) return;
+  lastReportedAccount = accountId;
+  chrome.runtime?.sendMessage?.({ type: 'SYF_ACCOUNT', accountId } as SyfMessage).catch(() => {});
+}
+
 async function submitFeedback(token: string): Promise<any> {
   // Give a just-loaded page a moment to deliver its config before giving up.
   for (let i = 0; i < 25 && !ytConfig?.context; i++) await new Promise((r) => setTimeout(r, 100));
@@ -232,7 +249,9 @@ async function submitFeedback(token: string): Promise<any> {
         'Content-Type': 'application/json',
         Authorization: await sapisidHash(),
         'X-Origin': YT_ORIGIN,
-        'X-Goog-AuthUser': '0',
+        // Target the account the user is actually viewing, not a hardcoded slot 0 — otherwise a
+        // multi-login user who switched accounts would submit feedback as their primary account.
+        'X-Goog-AuthUser': String(cfg.authUser ?? '0'),
         'X-Youtube-Client-Name': String(cfg.clientName ?? 1),
         'X-Youtube-Client-Version': String(cfg.clientVersion ?? ''),
       },
@@ -568,9 +587,18 @@ window.addEventListener('message', (e: MessageEvent) => {
       current = { videoId: d.videoId, channelId: d.channelId, channelName: d.channelName, title: d.title };
       void refreshAvailability();
       break;
-    case 'YT_CONFIG':
-      ytConfig = { apiKey: d.apiKey, context: d.context, clientName: d.clientName, clientVersion: d.clientVersion };
+    case 'YT_CONFIG': {
+      ytConfig = {
+        apiKey: d.apiKey,
+        context: d.context,
+        clientName: d.clientName,
+        clientVersion: d.clientVersion,
+        accountId: d.accountId,
+        authUser: d.authUser,
+      };
+      reportAccount(d.accountId);
       break;
+    }
     case 'NATIVE_ACTION': {
       const i = d.info || {};
       chrome.runtime

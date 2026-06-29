@@ -219,7 +219,9 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     youtube.com page could clickjack the one-click Undo/Redo (Reset is behind a native confirm). The
     CSP blocks non-youtube origins.
   - `relayReplay` targets the first open youtube.com tab — a multi-account user could submit a token
-    against the wrong account.
+    against the wrong account. (Partially mitigated by the account-switch detection below: a token
+    captured under a different account is cleared once we see the account change, and submits now
+    carry the live `X-Goog-AuthUser`. The "first open tab" relay target itself is still naive.)
   - **(Feature 3) declarativeNetRequest strips `X-Frame-Options`/CSP** on framed
     `https://www.youtube.com/watch` sub_frames so the comment-search window can embed the real page.
     Scoped to watch pages (not `/embed/`), but it's global while installed: any site could now frame a
@@ -351,6 +353,32 @@ correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
      configurable cap; this just bounds the in-page mirror.
   Verified: `typecheck`+`build` green, `npm run drive` injects the 6-button bar + capture
   path intact.
+
+- **Account-switch safety (2026-06-29 — detect & clear):** the extension had **zero account
+  awareness** — all storage (`syf.feedback`/`syf.actionlog`/`syf.settings`/`syf.quota`) is global
+  to the Chrome profile, shared across whatever Google account is active. Two things are actually
+  account-specific: the captured `feedbackToken`s (the cache *keys* are global video/channel IDs;
+  the *tokens* are per-account) and the submit auth. Fixed:
+  1. **Capture the active account identity.** `page-bridge.ts` `postConfig()` now also reads an
+     opaque per-account fingerprint (`ytcfg` `DATASYNC_ID`, falling back to `DELEGATED_SESSION_ID`/
+     `SESSION_INDEX`) + the `SESSION_INDEX` auth-user slot, and ships them in the existing
+     `YT_CONFIG` message (page → bridge → isolated `youtube.ts`). Not a credential; never displayed.
+  2. **Fix the hardcoded auth slot.** `submitFeedback()` (`youtube.ts`) replaced the hardcoded
+     `X-Goog-AuthUser: '0'` with the live `cfg.authUser` — so feedback targets the account the user
+     is actually viewing, not always the primary (slot 0) account in a multi-login session.
+  3. **Detect & clear.** `youtube.ts` `reportAccount()` sends `SYF_ACCOUNT { accountId }` to the SW
+     when config arrives / the id changes (deduped per page; empty id ignored → behaves as before).
+     The SW's `SYF_ACCOUNT` handler stores the id under a new `syf.account` key; on a *changed* id
+     (a real switch — first sight never clears) it wipes `syf.feedback` (→ `emptyCache()`) +
+     `syf.actionlog`, cancels any pending throttled flush, and `invalidateMem()`s — mirroring the
+     `SYF_RESET` safety so an in-flight save can't resurrect stale tokens. `syf.settings`/`syf.quota`
+     are **kept** (account-agnostic: the API key, hide-Shorts, TTL, quota are the user's). The
+     action log is cleared too (it reflects the *current* account's actions and avoids cross-account
+     undo/redo). `ACCOUNT_KEY` is in `ALL_STORAGE_KEYS` (cleared by Reset). This is **detect &
+     clear**, not per-account namespacing — keeps the single-account simplicity.
+  Caveat: the `ytcfg` field names (`DATASYNC_ID`/`SESSION_INDEX`) are the conventional keys —
+  confirm against the live signed-in page (recon/CDP) and that they change across the avatar account
+  switcher before relying on them; an empty id falls back to the previous behavior.
 
 ## Layout
 

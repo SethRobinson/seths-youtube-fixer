@@ -368,6 +368,11 @@ function postConfig(): void {
     context,
     clientName: ytcfgGet('INNERTUBE_CONTEXT_CLIENT_NAME') ?? 1,
     clientVersion: ytcfgGet('INNERTUBE_CONTEXT_CLIENT_VERSION') ?? '',
+    // Opaque per-account fingerprint (not a credential) + the X-Goog-AuthUser slot for the
+    // active account. The isolated world uses accountId to detect an account switch (and clear
+    // stale tokens) and authUser to target the account the user is actually viewing.
+    accountId: String(ytcfgGet('DATASYNC_ID') ?? ytcfgGet('DELEGATED_SESSION_ID') ?? ytcfgGet('SESSION_INDEX') ?? ''),
+    authUser: String(ytcfgGet('SESSION_INDEX') ?? '0'),
   });
 }
 

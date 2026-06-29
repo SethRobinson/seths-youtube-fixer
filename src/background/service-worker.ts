@@ -15,6 +15,7 @@ import {
   SETTINGS_KEY,
   DEFAULT_SETTINGS,
   ALL_STORAGE_KEYS,
+  ACCOUNT_KEY,
   QUOTA_KEY,
   DEFAULT_DAILY_QUOTA,
   type SyfMessage,
@@ -604,6 +605,40 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
         sendResponse({ ok: true });
       });
       return true;
+    }
+
+    case 'SYF_ACCOUNT': {
+      // The active YouTube account (opaque ytcfg fingerprint). If it differs from the last one
+      // we saw, the cached feedback tokens + action log belong to a DIFFERENT account and must
+      // not be replayed against this one — clear them. First sight (no stored id) just records
+      // it, so we never wipe a legitimate existing cache on upgrade/first run.
+      const accountId = msg.accountId;
+      if (accountId) {
+        // Ordered after pending writes (like SYF_RESET) so an in-flight save can't resurrect data.
+        enqueue(async () => {
+          const o = await chrome.storage.local.get(ACCOUNT_KEY);
+          const prev = (o[ACCOUNT_KEY] as string) ?? '';
+          if (prev && prev !== accountId) {
+            // Cancel any pending throttled cache flush so it can't write stale data back.
+            if (flushTimer) {
+              clearTimeout(flushTimer);
+              flushTimer = null;
+            }
+            cacheDirty = false;
+            await chrome.storage.local.set({
+              [FEEDBACK_KEY]: emptyCache(),
+              [ACTIONLOG_KEY]: [],
+              [ACCOUNT_KEY]: accountId,
+            });
+            invalidateMem();
+            console.log('[SYF] account changed — cleared feedback cache + action log');
+          } else if (prev !== accountId) {
+            await chrome.storage.local.set({ [ACCOUNT_KEY]: accountId });
+          }
+        });
+      }
+      sendResponse({ ok: true });
+      return false;
     }
 
     case 'SYF_RESET':
