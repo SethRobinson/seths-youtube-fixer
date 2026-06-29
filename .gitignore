@@ -10,3 +10,4 @@ releases/
 
 # Sensitive project info (see AGENTS-secret.md) — never commit
 AGENTS-secret.md
+.claude/settings.json
