@@ -250,6 +250,15 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     `wipe.html?authuser=N` → `SYF_WIPE`, and `handleWipe` opens
     `https://myactivity.google.com/product/youtube?authuser=N`. This fixes the likely multi-login
     empty-scan case where YouTube was on account slot N but My Activity opened the default account.
+  - **Brand-account routing (2026-06-29):** active YouTube channels can be Brand-account identities
+    under the same Google account. In that case the real My Activity page is
+    `https://myactivity.google.com/b/<pageId>/product/youtube`, not bare `/product/youtube`.
+    Confirmed live: bare slot 0 was stale while YouTube `/feed/history`, `myaccount .../yourdata/youtube?pageId=...`,
+    and `/b/<pageId>/product/youtube` all showed today's watch history. `page-bridge.ts` now sends
+    `DELEGATED_SESSION_ID` as `pageId`; `youtube.ts` includes it in `SYF_ACCOUNT`, `SYF_HISTORY`,
+    and `SYF_OPEN_PAGE`; `wipe.html` preserves it; and `handleWipe` routes Brand-account scans/deletes
+    to `/b/<pageId>/product/youtube`. The scanner's token/timestamp DOM still matches there
+    (`data-token`/`data-date`; read-only live check found 100 rows).
   - Caveat: timestamps are minute-precision, assumed "today" (yesterday if the time is in the
     future). Deletion re-scans after each click (DOM mutates).
   - Adapter A (UI click) is dead: the confirm "Delete" is a Material Web button (`VfPpkd-LgbsSe`)
@@ -384,9 +393,10 @@ correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
      action log is cleared too (it reflects the *current* account's actions and avoids cross-account
      undo/redo). `ACCOUNT_KEY` is in `ALL_STORAGE_KEYS` (cleared by Reset). This is **detect &
      clear**, not per-account namespacing — keeps the single-account simplicity.
-  4. **Route helper tabs to the active account.** The same live `authUser` now goes into the History
-     helper tab and the Forget recent flow (`wipe.html?authuser=N`, then My Activity
-     `?authuser=N`) so multi-login profiles don't scan/delete the default Google account by mistake.
+  4. **Route helper tabs to the active account/channel.** The same live `authUser` now goes into the
+     History helper tab and the Forget recent flow; Brand accounts also carry `pageId` and route My
+     Activity to `/b/<pageId>/product/youtube`. This prevents multi-login profiles and Brand channels
+     from scanning/deleting the wrong Google-account view by mistake.
   Caveat: the `ytcfg` field names (`DATASYNC_ID`/`SESSION_INDEX`) are the conventional keys —
   confirm against the live signed-in page (recon/CDP) and that they change across the avatar account
   switcher before relying on them; an empty id falls back to the previous behavior.
@@ -406,7 +416,7 @@ correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
   framed `youtube.com/watch` loads so the bottom pane can embed the real page.
 - `src/options/`, `src/popup/` — options page (API key, hide-shorts, TTL, **action log**, reset;
   also opened in-page as the **ℹ Info** dialog) and toolbar popup.
-- `src/wipe/` — standalone Forget recent page, opened in a new tab via `wipe.html?minutes=N&authuser=N`.
+- `src/wipe/` — standalone Forget recent page, opened in a new tab via `wipe.html?minutes=N&authuser=N&pageId=<brandId>`.
   (The old standalone `src/log/` page was removed — the action log now lives in the options page.)
 - `src/common/messages.ts` — shared messages/types/settings.
 - `src/icons/` — extension icons (16/32/48/128 PNG), referenced by the manifest; copied to

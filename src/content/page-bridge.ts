@@ -363,6 +363,7 @@ function postConfig(): void {
   const apiKey = ytcfgGet('INNERTUBE_API_KEY');
   const context = ytcfgGet('INNERTUBE_CONTEXT');
   if (!apiKey || !context) return;
+  const delegatedSessionId = String(ytcfgGet('DELEGATED_SESSION_ID') ?? '');
   post('YT_CONFIG', {
     apiKey,
     context,
@@ -370,9 +371,11 @@ function postConfig(): void {
     clientVersion: ytcfgGet('INNERTUBE_CONTEXT_CLIENT_VERSION') ?? '',
     // Opaque per-account fingerprint (not a credential) + the X-Goog-AuthUser slot for the
     // active account. The isolated world uses accountId to detect an account switch (and clear
-    // stale tokens) and authUser to target the account the user is actually viewing.
-    accountId: String(ytcfgGet('DATASYNC_ID') ?? ytcfgGet('DELEGATED_SESSION_ID') ?? ytcfgGet('SESSION_INDEX') ?? ''),
+    // stale tokens), authUser to target the signed-in slot, and pageId to route Brand-account
+    // helper pages (My Activity uses /b/<pageId>/... for those).
+    accountId: String(ytcfgGet('DATASYNC_ID') ?? delegatedSessionId ?? ytcfgGet('SESSION_INDEX') ?? ''),
     authUser: String(ytcfgGet('SESSION_INDEX') ?? '0'),
+    pageId: delegatedSessionId,
   });
 }
 

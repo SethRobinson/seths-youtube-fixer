@@ -285,9 +285,14 @@ const HISTORY_URL = 'https://www.youtube.com/feed/history';
 interface StoredAccount {
   id: string;
   authUser?: string;
+  pageId?: string;
 }
 
 function normalizeAuthUser(v: unknown): string {
+  const s = String(v ?? '').trim();
+  return /^\d+$/.test(s) ? s : '';
+}
+function normalizePageId(v: unknown): string {
   const s = String(v ?? '').trim();
   return /^\d+$/.test(s) ? s : '';
 }
@@ -295,27 +300,35 @@ function normalizeAuthUser(v: unknown): string {
 function storedAccount(v: unknown): StoredAccount {
   if (typeof v === 'string') return { id: v };
   if (v && typeof v === 'object') {
-    const o = v as { id?: unknown; accountId?: unknown; authUser?: unknown };
+    const o = v as { id?: unknown; accountId?: unknown; authUser?: unknown; pageId?: unknown };
     return {
       id: String(o.id ?? o.accountId ?? ''),
       authUser: normalizeAuthUser(o.authUser),
+      pageId: normalizePageId(o.pageId),
     };
   }
   return { id: '' };
 }
 
-async function storedAuthUser(): Promise<string> {
+async function storedAccountRoute(): Promise<{ authUser: string; pageId: string }> {
   const o = await chrome.storage.local.get(ACCOUNT_KEY);
-  return storedAccount(o[ACCOUNT_KEY]).authUser || '';
+  const a = storedAccount(o[ACCOUNT_KEY]);
+  return { authUser: a.authUser || '', pageId: a.pageId || '' };
 }
 
-async function resolveAuthUser(authUser?: string): Promise<string> {
-  return normalizeAuthUser(authUser) || (await storedAuthUser());
+async function resolveAccountRoute(authUser?: string, pageId?: string): Promise<{ authUser: string; pageId: string }> {
+  const stored = await storedAccountRoute();
+  return {
+    authUser: normalizeAuthUser(authUser) || stored.authUser,
+    pageId: normalizePageId(pageId) || stored.pageId,
+  };
 }
 
-function accountUrl(url: string, authUser: string): string {
-  const u = new URL(url);
+function accountUrl(url: string, authUser: string, pageId = ''): string {
+  const base = pageId && url === MA_URL ? `https://myactivity.google.com/b/${pageId}/product/youtube` : url;
+  const u = new URL(base);
   if (authUser) u.searchParams.set('authuser', authUser);
+  if (pageId) u.searchParams.set('pageId', pageId);
   return u.href;
 }
 
@@ -344,13 +357,13 @@ async function sendToTab(tabId: number, message: SyfMessage, tries = 8): Promise
   throw new Error('My Activity content script did not respond');
 }
 
-async function handleWipe(mode: 'scan' | 'delete', startMs: number, endMs: number, authUser?: string): Promise<any> {
+async function handleWipe(mode: 'scan' | 'delete', startMs: number, endMs: number, authUser?: string, pageId?: string): Promise<any> {
   let tabId: number | undefined;
   try {
-    const activeAuthUser = await resolveAuthUser(authUser);
+    const route = await resolveAccountRoute(authUser, pageId);
     // Fresh tab so our content script is active. Delete runs focused (active) —
     // My Activity's confirm dialog is unreliable in a background tab.
-    const tab = await chrome.tabs.create({ url: accountUrl(MA_URL, activeAuthUser), active: mode === 'delete' });
+    const tab = await chrome.tabs.create({ url: accountUrl(MA_URL, route.authUser, route.pageId), active: mode === 'delete' });
     tabId = tab.id!;
     await waitTabComplete(tabId);
     await delay(5000); // let the SPA render the activity list
@@ -388,11 +401,11 @@ async function relayReplay(token: string): Promise<any> {
 
 // Toggle/read watch-history pause state by driving /feed/history in a background
 // tab (our content script there extracts the token and submits via the bridge).
-async function handleHistory(action: 'toggle' | 'state', authUser?: string): Promise<HistoryResult> {
+async function handleHistory(action: 'toggle' | 'state', authUser?: string, pageId?: string): Promise<HistoryResult> {
   let tabId: number | undefined;
   try {
-    const activeAuthUser = await resolveAuthUser(authUser);
-    const tab = await chrome.tabs.create({ url: accountUrl(HISTORY_URL, activeAuthUser), active: false });
+    const route = await resolveAccountRoute(authUser, pageId);
+    const tab = await chrome.tabs.create({ url: accountUrl(HISTORY_URL, route.authUser, route.pageId), active: false });
     tabId = tab.id!;
     await waitTabComplete(tabId);
     await delay(3800);
@@ -596,7 +609,7 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       return true;
 
     case 'SYF_WIPE':
-      handleWipe(msg.mode, msg.startMs, msg.endMs, msg.authUser).then(sendResponse);
+      handleWipe(msg.mode, msg.startMs, msg.endMs, msg.authUser, msg.pageId).then(sendResponse);
       return true;
 
     case 'SYF_OPEN_OPTIONS':
@@ -608,8 +621,9 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       (async () => {
         const q = new URLSearchParams();
         if (msg.minutes) q.set('minutes', String(msg.minutes));
-        const authUser = normalizeAuthUser(msg.authUser) || (await storedAuthUser());
-        if (authUser) q.set('authuser', authUser);
+        const route = await resolveAccountRoute(msg.authUser, msg.pageId);
+        if (route.authUser) q.set('authuser', route.authUser);
+        if (route.pageId) q.set('pageId', route.pageId);
         const suffix = q.toString() ? `?${q}` : '';
         await chrome.tabs.create({ url: chrome.runtime.getURL('wipe/wipe.html') + suffix });
         sendResponse({ ok: true });
@@ -622,7 +636,7 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       return true;
 
     case 'SYF_HISTORY':
-      handleHistory(msg.action, msg.authUser).then(async (res) => {
+      handleHistory(msg.action, msg.authUser, msg.pageId).then(async (res) => {
         if (res.ok && typeof res.paused === 'boolean') await patchSettings({ lastHistoryPaused: res.paused });
         sendResponse(res);
       });
@@ -660,13 +674,15 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       // the id/auth slot, so we never clear a legitimate existing cache on upgrade/first run.
       const accountId = msg.accountId;
       const authUser = normalizeAuthUser(msg.authUser);
+      const pageId = normalizePageId(msg.pageId);
       if (accountId) {
         // Ordered after pending writes (like SYF_RESET) so an in-flight save can't resurrect data.
         enqueue(async () => {
           const o = await chrome.storage.local.get(ACCOUNT_KEY);
           const prev = storedAccount(o[ACCOUNT_KEY]);
           const nextAuthUser = authUser || (prev.id === accountId ? prev.authUser || '' : '');
-          const next = { id: accountId, authUser: nextAuthUser };
+          const nextPageId = pageId || (prev.id === accountId ? prev.pageId || '' : '');
+          const next = { id: accountId, authUser: nextAuthUser, pageId: nextPageId };
           if (prev.id && prev.id !== accountId) {
             // Cancel any pending throttled cache flush so it can't write stale data back.
             if (flushTimer) {
@@ -681,7 +697,7 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
             });
             invalidateMem();
             console.log('[SYF] account changed — cleared feedback cache + action log');
-          } else if (prev.id !== accountId || prev.authUser !== nextAuthUser) {
+          } else if (prev.id !== accountId || prev.authUser !== nextAuthUser || prev.pageId !== nextPageId) {
             await chrome.storage.local.set({ [ACCOUNT_KEY]: next });
           }
         });

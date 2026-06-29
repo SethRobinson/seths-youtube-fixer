@@ -139,6 +139,7 @@ async function toggleHistory(): Promise<void> {
     type: 'SYF_HISTORY',
     action: 'toggle',
     authUser: activeAuthUser(),
+    pageId: activePageId(),
   } as SyfMessage)) as
     | HistoryResult
     | undefined;
@@ -206,6 +207,7 @@ let ytConfig: {
   clientVersion?: unknown;
   accountId?: string;
   authUser?: string;
+  pageId?: string;
 } | null = null;
 
 function getCookie(name: string): string {
@@ -239,11 +241,16 @@ requestConfig();
 // Deduped per page so re-posted config (every SPA nav) doesn't spam the SW; an empty id (e.g.
 // signed-out, or ytcfg field absent) is ignored so we behave exactly as before.
 let lastReportedAccount: string | null = null;
-function reportAccount(accountId?: string, authUser?: string): void {
-  const key = `${accountId || ''}\n${authUser || ''}`;
+function normalizePageId(v: unknown): string {
+  const s = String(v ?? '').trim();
+  return /^\d+$/.test(s) ? s : '';
+}
+
+function reportAccount(accountId?: string, authUser?: string, pageId?: string): void {
+  const key = `${accountId || ''}\n${authUser || ''}\n${normalizePageId(pageId)}`;
   if (!accountId || key === lastReportedAccount) return;
   lastReportedAccount = key;
-  chrome.runtime?.sendMessage?.({ type: 'SYF_ACCOUNT', accountId, authUser } as SyfMessage).catch(() => {});
+  chrome.runtime?.sendMessage?.({ type: 'SYF_ACCOUNT', accountId, authUser, pageId: normalizePageId(pageId) } as SyfMessage).catch(() => {});
 }
 
 const MY_ACTIVITY_URL = 'https://myactivity.google.com/product/youtube';
@@ -251,11 +258,16 @@ function activeAuthUser(): string {
   const s = String(ytConfig?.authUser ?? '').trim();
   return /^\d+$/.test(s) ? s : '';
 }
+function activePageId(): string {
+  return normalizePageId(ytConfig?.pageId);
+}
 
 function youtubeActivityUrl(): string {
-  const u = new URL(MY_ACTIVITY_URL);
+  const pageId = activePageId();
+  const u = new URL(pageId ? `https://myactivity.google.com/b/${pageId}/product/youtube` : MY_ACTIVITY_URL);
   const authUser = activeAuthUser();
   if (authUser) u.searchParams.set('authuser', authUser);
+  if (pageId) u.searchParams.set('pageId', pageId);
   return u.href;
 }
 
@@ -406,7 +418,13 @@ function openWipePresets(): void {
   const open = (m: number) => {
     overlay.remove();
     chrome.runtime
-      ?.sendMessage?.({ type: 'SYF_OPEN_PAGE', page: 'wipe', minutes: m, authUser: activeAuthUser() } as SyfMessage)
+      ?.sendMessage?.({
+        type: 'SYF_OPEN_PAGE',
+        page: 'wipe',
+        minutes: m,
+        authUser: activeAuthUser(),
+        pageId: activePageId(),
+      } as SyfMessage)
       .catch(() => {});
   };
   panel.querySelectorAll('.syf-wipe-preset').forEach((b) =>
@@ -624,8 +642,9 @@ window.addEventListener('message', (e: MessageEvent) => {
         clientVersion: d.clientVersion,
         accountId: d.accountId,
         authUser: d.authUser,
+        pageId: d.pageId,
       };
-      reportAccount(d.accountId, d.authUser);
+      reportAccount(d.accountId, d.authUser, d.pageId);
       break;
     }
     case 'NATIVE_ACTION': {

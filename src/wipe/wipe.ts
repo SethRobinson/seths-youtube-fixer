@@ -12,10 +12,16 @@ const normalizeAuthUser = (v: unknown) => {
   const s = String(v ?? '').trim();
   return /^\d+$/.test(s) ? s : '';
 };
+const normalizePageId = (v: unknown) => {
+  const s = String(v ?? '').trim();
+  return /^\d+$/.test(s) ? s : '';
+};
 const AUTH_USER = normalizeAuthUser(PARAMS.get('authuser'));
+const PAGE_ID = normalizePageId(PARAMS.get('pageId'));
 function activityUrl(): string {
-  const u = new URL('https://myactivity.google.com/product/youtube');
+  const u = new URL(PAGE_ID ? `https://myactivity.google.com/b/${PAGE_ID}/product/youtube` : 'https://myactivity.google.com/product/youtube');
   if (AUTH_USER) u.searchParams.set('authuser', AUTH_USER);
+  if (PAGE_ID) u.searchParams.set('pageId', PAGE_ID);
   return u.href;
 }
 function activityLink(): string {
@@ -56,7 +62,14 @@ async function scan(minutes: number): Promise<void> {
   root.innerHTML = `<div class="loading">Scanning ${activityLink()} for the last ${minutes} min… (opens My Activity in a background tab — this can take ~10s)</div>`;
   const endMs = Date.now();
   const startMs = endMs - minutes * 60_000;
-  const res = await chrome.runtime.sendMessage({ type: 'SYF_WIPE', mode: 'scan', startMs, endMs, authUser: AUTH_USER } as SyfMessage);
+  const res = await chrome.runtime.sendMessage({
+    type: 'SYF_WIPE',
+    mode: 'scan',
+    startMs,
+    endMs,
+    authUser: AUTH_USER,
+    pageId: PAGE_ID,
+  } as SyfMessage);
   renderReview(startMs, endMs, res);
 }
 
@@ -85,7 +98,14 @@ function renderReview(startMs: number, endMs: number, res: any): void {
 
 async function doDelete(startMs: number, endMs: number, count: number): Promise<void> {
   root.innerHTML = `<div class="loading">Deleting ${count} item(s) via My Activity…</div>`;
-  const res = await chrome.runtime.sendMessage({ type: 'SYF_WIPE', mode: 'delete', startMs, endMs, authUser: AUTH_USER } as SyfMessage);
+  const res = await chrome.runtime.sendMessage({
+    type: 'SYF_WIPE',
+    mode: 'delete',
+    startMs,
+    endMs,
+    authUser: AUTH_USER,
+    pageId: PAGE_ID,
+  } as SyfMessage);
   if (res?.ok) {
     withBack(`<div class="done">✓ Deleted ${res.deleted ?? 0} item(s) from ${activityLink()}, ${fmtTime(startMs)} to ${fmtTime(endMs)}.</div>`);
   } else {
