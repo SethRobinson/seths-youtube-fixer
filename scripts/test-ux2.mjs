@@ -1,4 +1,4 @@
-// Verify Wipe + Info open standalone pages in new tabs.
+// Verify Forget recent + Info open standalone pages in new tabs.
 import { connect, findExtensionId, reloadExtension } from './chrome-lib.mjs';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -25,7 +25,7 @@ if (logTab) {
 await w.locator('#syf-bar [data-action="wipe"]').click();
 await wait(1500);
 const wipeTab = context.pages().find((p) => p.url().includes('/wipe/wipe.html'));
-console.log('Wipe -> wipe tab:', !!wipeTab);
+console.log('Forget recent -> wipe tab:', !!wipeTab);
 if (wipeTab) {
   await wait(600);
   const presets = await wipeTab.locator('.preset').count();

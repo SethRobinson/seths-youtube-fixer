@@ -224,13 +224,13 @@ for (const [hl, name] of LANGS) {
   try {
     const m = await myActivityProbe(hl);
     console.log(
-      `  WIPE HISTORY  : items=${m.tokenItems}  times-parsed=${m.parsedTimes}/${m.tokenItems}  oldEnglishAria=${m.oldEnglishAriaMatched ? 'matched' : 'MISSED (localized) ❌→now token-based ✅'}`
+      `  FORGET RECENT: items=${m.tokenItems}  times-parsed=${m.parsedTimes}/${m.tokenItems}  oldEnglishAria=${m.oldEnglishAriaMatched ? 'matched' : 'MISSED (localized) ❌→now token-based ✅'}`
     );
     console.log(`                  localized delete aria: ${JSON.stringify(m.sampleDeleteAria)}`);
     console.log(`                  sample times: ${JSON.stringify(m.sampleTimes)}`);
     console.log(`                  parsed: ${JSON.stringify(m.sampleParsed)}`);
   } catch (e) {
-    console.log('  WIPE HISTORY  : ERROR', String(e).slice(0, 120));
+    console.log('  FORGET RECENT: ERROR', String(e).slice(0, 120));
   }
   console.log('');
 }

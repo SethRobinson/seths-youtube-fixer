@@ -280,6 +280,44 @@ async function flushCache(): Promise<void> {
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const MA_URL = 'https://myactivity.google.com/product/youtube';
+const HISTORY_URL = 'https://www.youtube.com/feed/history';
+
+interface StoredAccount {
+  id: string;
+  authUser?: string;
+}
+
+function normalizeAuthUser(v: unknown): string {
+  const s = String(v ?? '').trim();
+  return /^\d+$/.test(s) ? s : '';
+}
+
+function storedAccount(v: unknown): StoredAccount {
+  if (typeof v === 'string') return { id: v };
+  if (v && typeof v === 'object') {
+    const o = v as { id?: unknown; accountId?: unknown; authUser?: unknown };
+    return {
+      id: String(o.id ?? o.accountId ?? ''),
+      authUser: normalizeAuthUser(o.authUser),
+    };
+  }
+  return { id: '' };
+}
+
+async function storedAuthUser(): Promise<string> {
+  const o = await chrome.storage.local.get(ACCOUNT_KEY);
+  return storedAccount(o[ACCOUNT_KEY]).authUser || '';
+}
+
+async function resolveAuthUser(authUser?: string): Promise<string> {
+  return normalizeAuthUser(authUser) || (await storedAuthUser());
+}
+
+function accountUrl(url: string, authUser: string): string {
+  const u = new URL(url);
+  if (authUser) u.searchParams.set('authuser', authUser);
+  return u.href;
+}
 
 function waitTabComplete(tabId: number, timeoutMs = 25_000): Promise<void> {
   return new Promise((resolve) => {
@@ -306,12 +344,13 @@ async function sendToTab(tabId: number, message: SyfMessage, tries = 8): Promise
   throw new Error('My Activity content script did not respond');
 }
 
-async function handleWipe(mode: 'scan' | 'delete', startMs: number, endMs: number): Promise<any> {
+async function handleWipe(mode: 'scan' | 'delete', startMs: number, endMs: number, authUser?: string): Promise<any> {
   let tabId: number | undefined;
   try {
+    const activeAuthUser = await resolveAuthUser(authUser);
     // Fresh tab so our content script is active. Delete runs focused (active) —
     // My Activity's confirm dialog is unreliable in a background tab.
-    const tab = await chrome.tabs.create({ url: MA_URL, active: mode === 'delete' });
+    const tab = await chrome.tabs.create({ url: accountUrl(MA_URL, activeAuthUser), active: mode === 'delete' });
     tabId = tab.id!;
     await waitTabComplete(tabId);
     await delay(5000); // let the SPA render the activity list
@@ -349,10 +388,11 @@ async function relayReplay(token: string): Promise<any> {
 
 // Toggle/read watch-history pause state by driving /feed/history in a background
 // tab (our content script there extracts the token and submits via the bridge).
-async function handleHistory(action: 'toggle' | 'state'): Promise<HistoryResult> {
+async function handleHistory(action: 'toggle' | 'state', authUser?: string): Promise<HistoryResult> {
   let tabId: number | undefined;
   try {
-    const tab = await chrome.tabs.create({ url: 'https://www.youtube.com/feed/history', active: false });
+    const activeAuthUser = await resolveAuthUser(authUser);
+    const tab = await chrome.tabs.create({ url: accountUrl(HISTORY_URL, activeAuthUser), active: false });
     tabId = tab.id!;
     await waitTabComplete(tabId);
     await delay(3800);
@@ -556,7 +596,7 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       return true;
 
     case 'SYF_WIPE':
-      handleWipe(msg.mode, msg.startMs, msg.endMs).then(sendResponse);
+      handleWipe(msg.mode, msg.startMs, msg.endMs, msg.authUser).then(sendResponse);
       return true;
 
     case 'SYF_OPEN_OPTIONS':
@@ -565,10 +605,16 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       return false;
 
     case 'SYF_OPEN_PAGE': {
-      const q = msg.minutes ? `?minutes=${msg.minutes}` : '';
-      chrome.tabs.create({ url: chrome.runtime.getURL('wipe/wipe.html') + q });
-      sendResponse({ ok: true });
-      return false;
+      (async () => {
+        const q = new URLSearchParams();
+        if (msg.minutes) q.set('minutes', String(msg.minutes));
+        const authUser = normalizeAuthUser(msg.authUser) || (await storedAuthUser());
+        if (authUser) q.set('authuser', authUser);
+        const suffix = q.toString() ? `?${q}` : '';
+        await chrome.tabs.create({ url: chrome.runtime.getURL('wipe/wipe.html') + suffix });
+        sendResponse({ ok: true });
+      })();
+      return true;
     }
 
     case 'SYF_RELAY_REPLAY':
@@ -576,7 +622,7 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       return true;
 
     case 'SYF_HISTORY':
-      handleHistory(msg.action).then(async (res) => {
+      handleHistory(msg.action, msg.authUser).then(async (res) => {
         if (res.ok && typeof res.paused === 'boolean') await patchSettings({ lastHistoryPaused: res.paused });
         sendResponse(res);
       });
@@ -611,14 +657,17 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       // The active YouTube account (opaque ytcfg fingerprint). If it differs from the last one
       // we saw, the cached feedback tokens + action log belong to a DIFFERENT account and must
       // not be replayed against this one — clear them. First sight (no stored id) just records
-      // it, so we never wipe a legitimate existing cache on upgrade/first run.
+      // the id/auth slot, so we never clear a legitimate existing cache on upgrade/first run.
       const accountId = msg.accountId;
+      const authUser = normalizeAuthUser(msg.authUser);
       if (accountId) {
         // Ordered after pending writes (like SYF_RESET) so an in-flight save can't resurrect data.
         enqueue(async () => {
           const o = await chrome.storage.local.get(ACCOUNT_KEY);
-          const prev = (o[ACCOUNT_KEY] as string) ?? '';
-          if (prev && prev !== accountId) {
+          const prev = storedAccount(o[ACCOUNT_KEY]);
+          const nextAuthUser = authUser || (prev.id === accountId ? prev.authUser || '' : '');
+          const next = { id: accountId, authUser: nextAuthUser };
+          if (prev.id && prev.id !== accountId) {
             // Cancel any pending throttled cache flush so it can't write stale data back.
             if (flushTimer) {
               clearTimeout(flushTimer);
@@ -628,12 +677,12 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
             await chrome.storage.local.set({
               [FEEDBACK_KEY]: emptyCache(),
               [ACTIONLOG_KEY]: [],
-              [ACCOUNT_KEY]: accountId,
+              [ACCOUNT_KEY]: next,
             });
             invalidateMem();
             console.log('[SYF] account changed — cleared feedback cache + action log');
-          } else if (prev !== accountId) {
-            await chrome.storage.local.set({ [ACCOUNT_KEY]: accountId });
+          } else if (prev.id !== accountId || prev.authUser !== nextAuthUser) {
+            await chrome.storage.local.set({ [ACCOUNT_KEY]: next });
           }
         });
       }

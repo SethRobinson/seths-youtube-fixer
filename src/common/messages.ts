@@ -26,14 +26,14 @@ export type SyfMessage =
       match?: { type: FeedbackType; videoId?: string; channelId?: string };
     }
   | { type: 'SYF_GET_LOG' }
-  | { type: 'SYF_WIPE'; mode: 'scan' | 'delete'; startMs: number; endMs: number }
+  | { type: 'SYF_WIPE'; mode: 'scan' | 'delete'; startMs: number; endMs: number; authUser?: string }
   | { type: 'SYF_MA_SCAN'; startMs: number; endMs: number }
   | { type: 'SYF_MA_DELETE'; startMs: number; endMs: number }
   | { type: 'SYF_OPEN_OPTIONS' }
-  | { type: 'SYF_OPEN_PAGE'; page: 'wipe'; minutes?: number }
+  | { type: 'SYF_OPEN_PAGE'; page: 'wipe'; minutes?: number; authUser?: string }
   | { type: 'SYF_RELAY_REPLAY'; token: string }
   | { type: 'SYF_DO_REPLAY'; token: string }
-  | { type: 'SYF_HISTORY'; action: 'toggle' | 'state' }
+  | { type: 'SYF_HISTORY'; action: 'toggle' | 'state'; authUser?: string }
   | { type: 'SYF_HISTORY_DO'; action: 'toggle' | 'state' }
   | { type: 'SYF_PATCH_SETTINGS'; patch: Partial<SyfSettings> }
   | { type: 'SYF_OPEN_COMMENT_SEARCH'; videoId: string; title?: string }
@@ -41,7 +41,7 @@ export type SyfMessage =
   | { type: 'SYF_COMMENT_REPLIES'; parentId: string; pageToken?: string }
   | { type: 'SYF_GET_QUOTA' }
   | { type: 'SYF_RESET_QUOTA' }
-  | { type: 'SYF_ACCOUNT'; accountId: string }
+  | { type: 'SYF_ACCOUNT'; accountId: string; authUser?: string }
   | { type: 'SYF_RESET' };
 
 export interface QuotaResult {
@@ -154,10 +154,10 @@ export const DEFAULT_DAILY_QUOTA = 10_000;
 // Google's quota). The API can't report remaining quota to a key, so we count our own calls.
 export const QUOTA_KEY = 'syf.quota';
 
-// The active YouTube account's opaque identity fingerprint (from ytcfg DATASYNC_ID), used only
-// to detect when the signed-in account changes. When it does, the SW clears the account-specific
-// feedback cache + action log so a token captured for the previous account can't be replayed
-// against the new one. Not a credential — never displayed.
+// The active YouTube account's opaque identity fingerprint (from ytcfg DATASYNC_ID) plus the
+// account slot (`authuser`). The fingerprint is used to detect account changes and clear
+// account-specific feedback tokens/logs; the slot routes YouTube/My Activity helper tabs to the
+// account the user is actually viewing. Neither is a credential — never displayed.
 export const ACCOUNT_KEY = 'syf.account';
 
 export interface SyfSettings {

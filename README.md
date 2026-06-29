@@ -1,7 +1,7 @@
 <div align="center">
   <img src="docs/images/icon128.png" width="96" height="96" alt="Seth's YouTube Fixer icon" />
   <h1>Seth's YouTube Fixer</h1>
-  <p><b>Take back control of YouTube.</b> Tell it what you don't want, wipe what you just watched, and search every comment on a video, all from one small bar under the player.</p>
+  <p><b>Take back control of YouTube.</b> Tell it what you don't want, forget what you just watched, and search every comment on a video, all from one small bar under the player.</p>
 </div>
 
 <p align="center">
@@ -24,7 +24,7 @@ One click sends YouTube's **real** "Don't recommend channel" signal for the crea
 
 > These aren't fake. The buttons reuse YouTube's own feedback actions. A button stays gray until YouTube has shown you that video or channel as a recommendation card, which is where the real action lives. Browse Home or the sidebar for a moment and it lights up.
 
-### Wipe history
+### Forget recent
 
 Delete the last 15, 30, 60, or 120 minutes (or a custom window) of YouTube watch and search history from your Google account. You get to **review the exact list before anything is deleted**.
 
@@ -83,7 +83,7 @@ Open any YouTube video and you'll see the new bar under the player.
 2. Follow the step-by-step instructions there to create a free key. It takes about 3 minutes in the Google Cloud Console.
 3. Paste the key in and **Save**. It's stored only on your computer and hidden by default. Click **Show** to check it.
 
-Settings also show an **estimate of how much of your daily Google Youtube API quota you've used today**, and the search window keeps a running tally, so you can see how much headroom you have. You can set how many comments each search loads (default 50,000) there too.
+Settings also show an **estimate of how much of your daily Google YouTube API quota you've used today**, and the search window keeps a running tally, so you can see how much headroom you have. You can set how many comments each search loads (default 50,000) there too.
 
 ---
 

@@ -228,6 +228,14 @@ html.syf-hide-shorts ytd-pivot-bar-item-renderer:has([tab-title='Shorts']) {
   margin: 0 0 12px;
   opacity: 0.9;
 }
+.syf-activity-link {
+  color: #3ea6ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.syf-modal-head .syf-activity-link {
+  color: inherit;
+}
 .syf-wipe-presets {
   display: flex;
   flex-wrap: wrap;
@@ -312,4 +320,3 @@ html.syf-hide-shorts ytd-pivot-bar-item-renderer:has([tab-title='Shorts']) {
   background: #fff;
   display: block;
 }
-

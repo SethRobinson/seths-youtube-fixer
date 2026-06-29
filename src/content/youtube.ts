@@ -36,7 +36,11 @@ const BUTTONS: BtnDef[] = [
   { action: 'nah', label: 'Less like this', tip: NAH_UNAVAIL },
   { action: 'hate-channel', label: 'Don’t recommend channel', tip: HATE_UNAVAIL },
   { action: 'pause-history', label: '⏸ Pause history', tip: 'Open YouTube’s watch-history settings to pause or resume recording.' },
-  { action: 'wipe', label: 'Wipe history', tip: 'Delete recent YouTube activity via My Activity.' },
+  {
+    action: 'wipe',
+    label: 'Forget recent',
+    tip: 'Forget recent YouTube activity via My Activity. You’ll review the exact list before anything is deleted.',
+  },
   { action: 'find-comments', label: 'Find in comments', tip: 'Search all public comments and replies.' },
   { action: 'info', label: 'ℹ Info', tip: 'Seth’s YouTube Fixer — settings, feedback log & undo.' },
 ];
@@ -131,7 +135,11 @@ async function toggleHistory(): Promise<void> {
   b.disabled = true;
   b.dataset.state = 'loading';
   b.textContent = 'Working…';
-  const res = (await chrome.runtime.sendMessage({ type: 'SYF_HISTORY', action: 'toggle' } as SyfMessage)) as
+  const res = (await chrome.runtime.sendMessage({
+    type: 'SYF_HISTORY',
+    action: 'toggle',
+    authUser: activeAuthUser(),
+  } as SyfMessage)) as
     | HistoryResult
     | undefined;
   b.disabled = false;
@@ -226,14 +234,33 @@ const cfgTimer = setInterval(() => {
 }, 500);
 requestConfig();
 
-// Tell the SW which account is active so it can clear stale per-account tokens on a switch.
+// Tell the SW which account is active so it can clear stale per-account tokens on a switch
+// and route helper tabs (My Activity / History) to the active account slot.
 // Deduped per page so re-posted config (every SPA nav) doesn't spam the SW; an empty id (e.g.
 // signed-out, or ytcfg field absent) is ignored so we behave exactly as before.
 let lastReportedAccount: string | null = null;
-function reportAccount(accountId?: string): void {
-  if (!accountId || accountId === lastReportedAccount) return;
-  lastReportedAccount = accountId;
-  chrome.runtime?.sendMessage?.({ type: 'SYF_ACCOUNT', accountId } as SyfMessage).catch(() => {});
+function reportAccount(accountId?: string, authUser?: string): void {
+  const key = `${accountId || ''}\n${authUser || ''}`;
+  if (!accountId || key === lastReportedAccount) return;
+  lastReportedAccount = key;
+  chrome.runtime?.sendMessage?.({ type: 'SYF_ACCOUNT', accountId, authUser } as SyfMessage).catch(() => {});
+}
+
+const MY_ACTIVITY_URL = 'https://myactivity.google.com/product/youtube';
+function activeAuthUser(): string {
+  const s = String(ytConfig?.authUser ?? '').trim();
+  return /^\d+$/.test(s) ? s : '';
+}
+
+function youtubeActivityUrl(): string {
+  const u = new URL(MY_ACTIVITY_URL);
+  const authUser = activeAuthUser();
+  if (authUser) u.searchParams.set('authuser', authUser);
+  return u.href;
+}
+
+function youtubeActivityLink(): string {
+  return `<a class="syf-activity-link" href="${youtubeActivityUrl()}" target="_blank" rel="noopener">YouTube activity</a>`;
 }
 
 async function submitFeedback(token: string): Promise<any> {
@@ -366,9 +393,9 @@ function openWipePresets(): void {
   const panel = document.createElement('div');
   panel.className = 'syf-modal-panel';
   const presets = settings.wipePresetsMin?.length ? settings.wipePresetsMin : [15, 30, 60, 120];
-  panel.innerHTML = `<div class="syf-modal-head"><strong>Wipe recent YouTube activity</strong><button class="syf-modal-close" title="Close">✕</button></div>
+  panel.innerHTML = `<div class="syf-modal-head"><strong>Forget recent ${youtubeActivityLink()}</strong><button class="syf-modal-close" title="Close">✕</button></div>
     <div class="syf-wipe-body">
-      <p class="syf-wipe-note">Pick how far back to delete. The next step opens in a new tab — it scans My Activity, which is slow, so it won’t interrupt your viewing here.</p>
+      <p class="syf-wipe-note">Pick how far back to forget. The next step opens in a new tab and scans ${youtubeActivityLink()}. You’ll review the exact list before anything is deleted.</p>
       <div class="syf-wipe-presets">
         ${presets.map((m) => `<button class="syf-btn syf-wipe-preset" data-min="${m}">Last ${m} min</button>`).join('')}
         <span class="syf-wipe-custom"><input id="syf-wipe-cmin" type="number" min="1" max="1440" placeholder="custom" /> min
@@ -378,7 +405,9 @@ function openWipePresets(): void {
   panel.querySelector('.syf-modal-close')!.addEventListener('click', () => overlay.remove());
   const open = (m: number) => {
     overlay.remove();
-    chrome.runtime?.sendMessage?.({ type: 'SYF_OPEN_PAGE', page: 'wipe', minutes: m } as SyfMessage).catch(() => {});
+    chrome.runtime
+      ?.sendMessage?.({ type: 'SYF_OPEN_PAGE', page: 'wipe', minutes: m, authUser: activeAuthUser() } as SyfMessage)
+      .catch(() => {});
   };
   panel.querySelectorAll('.syf-wipe-preset').forEach((b) =>
     b.addEventListener('click', () => open(Number((b as HTMLElement).dataset.min)))
@@ -571,7 +600,7 @@ function ensureBar(): void {
   if (videoId !== lastRefreshedVideoId) void refreshAvailability();
 }
 
-// The action-log panel and Wipe-history panel now live in standalone extension
+// The action-log panel and Forget recent panel now live in standalone extension
 // pages (src/log/ and src/wipe/), opened in their own tabs via SYF_OPEN_PAGE.
 
 // --- messages from the MAIN-world bridge ---
@@ -596,7 +625,7 @@ window.addEventListener('message', (e: MessageEvent) => {
         accountId: d.accountId,
         authUser: d.authUser,
       };
-      reportAccount(d.accountId);
+      reportAccount(d.accountId, d.authUser);
       break;
     }
     case 'NATIVE_ACTION': {

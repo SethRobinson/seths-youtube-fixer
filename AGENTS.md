@@ -14,7 +14,7 @@ the watch page:
 
 1. **Less like this** — submit YouTube's real *Not interested* feedback for the current video.
 2. **Don't recommend channel** — submit YouTube's real *Don't recommend channel* feedback.
-3. **Wipe history** — fast-delete recent YouTube activity via Google My Activity.
+3. **Forget recent** — fast-delete recent YouTube activity via Google My Activity after review.
 4. **Find in comments** — opens a separate two-pane window: search every public comment/reply on the
    current video via the YouTube Data API (top), click a match to open the real YouTube page at that
    comment (bottom) and Like/Reply natively. (DONE — see Feature 3 in Status.)
@@ -94,7 +94,7 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     wider distribution (a page script could read a cached feedback token).
 - **UX:** grayed "Less like this"/"Don't recommend channel" buttons stay clickable — clicking a
   grayed one shows a toast explaining why it's unavailable (`showToast`). Bar buttons: **Less like
-  this** · **Don't recommend channel** · **⏸ Pause history** · **Wipe history** · **Find in
+  this** · **Don't recommend channel** · **⏸ Pause history** · **Forget recent** · **Find in
   comments** · **ℹ Info**. (See above for the label history; internal ids stay `nah`/`hate-channel`.)
 - **UX (bar layout, 2026-06-16):** the bar is a single **non-wrapping row** with **no brand label**
   (the old "Seth's YouTube Fixer" text was removed). Buttons **auto-scale down to stay on one row**
@@ -110,8 +110,10 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     submits via the bridge → caches `settings.lastHistoryPaused` (drives the button label). Safety:
     if the token's gone (`no-token`), `showBackoff('history')` shows a "YouTube changed its code"
     notice with **Don't show again** (`settings.dismissedWarnings`).
-  - **Wipe history** — quick in-page **presets** dialog; picking a window opens the slow
-    scan/review/delete in a new tab (`wipe.html?minutes=N`) so it doesn't block viewing.
+  - **Forget recent** — quick in-page **presets** dialog; picking a window opens the slow
+    scan/review/delete in a new tab (`wipe.html?minutes=N&authuser=N`) so it doesn't block viewing.
+    Tooltip/dialog copy explicitly says the exact list is reviewed before anything is deleted, and
+    each "YouTube activity" mention in the related dialogs links to the real My Activity page.
   - **Info** — opens **settings as an in-page dialog** (iframe of `options/options.html`, allowed by
     `web_accessible_resources` for youtube.com; CSP permits it). The options page holds: API key +
     help, Hide Shorts, feedback TTL, **max cached videos**, the **action log** (Undo/Redo via `SYF_RELAY_REPLAY` →
@@ -178,7 +180,7 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
   `scripts/recon-i18n.mjs`):** the icon-based feedback capture ("Less like this"/"Don't recommend
   channel") and the Data-API comment search are locale-safe (icon enums / structured JSON, not UI
   text). Two features parsed English-only UI strings and were fixed to be locale-tolerant:
-  - **Wipe history** — anchors on the delete `data-token` (not the localized "Delete activity item"
+  - **Forget recent** — anchors on the delete `data-token` (not the localized "Delete activity item"
     aria-label, which matched **zero** items in every non-English locale), and parses the timestamp
     across 12-hour (en "3:32 PM"), 24-hour (fr/de/es/ja "15:32") and Korean ("오후 3:32") formats.
     The live run caught two more bugs the unit tests missed: (1) the video DURATION badge (also
@@ -228,7 +230,7 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     YouTube *watch* page (clickjacking the user's logged-in session there). Tighter options for later:
     make the rule **dynamic** (enable only while a search window is open), or nonce/initiator-gate it.
     The framed page runs the user's real authenticated session — fine for this single-user tool.
-- **Feature 2 — Wipe history (scan + UI DONE; real RPC delete VALIDATED 2026-06-17):**
+- **Feature 2 — Forget recent (scan + UI DONE; real RPC delete VALIDATED 2026-06-17):**
   - `src/content/myactivity.ts` runs on myactivity.google.com: it anchors each item on its delete
     **token** (`data-token`/`data-date` on the item's `<c-wiz>` — **not** the localized "Delete
     activity item" aria-label) and pairs it with its own inline timestamp (`ownTime`; falls back to a
@@ -243,6 +245,11 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     Japanese (`?hl=ja`) page via `test-wipe-delete-ja.mjs`: a single-item ±30s window (hard-gated to
     exactly one item), `deleted=1`, and the item was gone from its window after reload (total 67→66).
     So token-based detection + localized timestamp parsing + the `TmdDAd` RPC all work together.
+  - **Rename/account routing (2026-06-29):** user-facing "Wipe history" became **Forget recent**.
+    `youtube.ts` passes the active YouTube `SESSION_INDEX` through `SYF_OPEN_PAGE` →
+    `wipe.html?authuser=N` → `SYF_WIPE`, and `handleWipe` opens
+    `https://myactivity.google.com/product/youtube?authuser=N`. This fixes the likely multi-login
+    empty-scan case where YouTube was on account slot N but My Activity opened the default account.
   - Caveat: timestamps are minute-precision, assumed "today" (yesterday if the time is in the
     future). Deletion re-scans after each click (DOM mutates).
   - Adapter A (UI click) is dead: the confirm "Delete" is a Material Web button (`VfPpkd-LgbsSe`)
@@ -366,9 +373,10 @@ correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
   2. **Fix the hardcoded auth slot.** `submitFeedback()` (`youtube.ts`) replaced the hardcoded
      `X-Goog-AuthUser: '0'` with the live `cfg.authUser` — so feedback targets the account the user
      is actually viewing, not always the primary (slot 0) account in a multi-login session.
-  3. **Detect & clear.** `youtube.ts` `reportAccount()` sends `SYF_ACCOUNT { accountId }` to the SW
-     when config arrives / the id changes (deduped per page; empty id ignored → behaves as before).
-     The SW's `SYF_ACCOUNT` handler stores the id under a new `syf.account` key; on a *changed* id
+  3. **Detect & clear.** `youtube.ts` `reportAccount()` sends `SYF_ACCOUNT { accountId, authUser }`
+     to the SW when config arrives / the id or auth slot changes (deduped per page; empty id ignored
+     → behaves as before). The SW's `SYF_ACCOUNT` handler stores `{ id, authUser }` under
+     `syf.account` (old string values are still read); on a *changed* id
      (a real switch — first sight never clears) it wipes `syf.feedback` (→ `emptyCache()`) +
      `syf.actionlog`, cancels any pending throttled flush, and `invalidateMem()`s — mirroring the
      `SYF_RESET` safety so an in-flight save can't resurrect stale tokens. `syf.settings`/`syf.quota`
@@ -376,6 +384,9 @@ correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
      action log is cleared too (it reflects the *current* account's actions and avoids cross-account
      undo/redo). `ACCOUNT_KEY` is in `ALL_STORAGE_KEYS` (cleared by Reset). This is **detect &
      clear**, not per-account namespacing — keeps the single-account simplicity.
+  4. **Route helper tabs to the active account.** The same live `authUser` now goes into the History
+     helper tab and the Forget recent flow (`wipe.html?authuser=N`, then My Activity
+     `?authuser=N`) so multi-login profiles don't scan/delete the default Google account by mistake.
   Caveat: the `ytcfg` field names (`DATASYNC_ID`/`SESSION_INDEX`) are the conventional keys —
   confirm against the live signed-in page (recon/CDP) and that they change across the avatar account
   switcher before relying on them; an empty id falls back to the previous behavior.
@@ -395,7 +406,7 @@ correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
   framed `youtube.com/watch` loads so the bottom pane can embed the real page.
 - `src/options/`, `src/popup/` — options page (API key, hide-shorts, TTL, **action log**, reset;
   also opened in-page as the **ℹ Info** dialog) and toolbar popup.
-- `src/wipe/` — standalone Wipe-history page, opened in a new tab via `wipe.html?minutes=N`.
+- `src/wipe/` — standalone Forget recent page, opened in a new tab via `wipe.html?minutes=N&authuser=N`.
   (The old standalone `src/log/` page was removed — the action log now lives in the options page.)
 - `src/common/messages.ts` — shared messages/types/settings.
 - `src/icons/` — extension icons (16/32/48/128 PNG), referenced by the manifest; copied to
