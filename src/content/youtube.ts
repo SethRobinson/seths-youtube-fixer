@@ -63,7 +63,9 @@ let historyInfo: { token?: string | null; paused?: boolean | null; found?: boole
 
 function applySettings(s: SyfSettings): void {
   settings = s;
+  const hideRecommendedPlaylists = !!(s.hideRecommendedPlaylists ?? s.hideHomePlaylists);
   document.documentElement.classList.toggle('syf-hide-shorts', !!s.hideShorts);
+  document.documentElement.classList.toggle('syf-hide-recommended-playlists', hideRecommendedPlaylists);
   updateHistoryButton();
   updateFindCommentsButton();
 }

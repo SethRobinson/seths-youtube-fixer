@@ -217,6 +217,27 @@ html.syf-hide-shorts ytd-pivot-bar-item-renderer:has([tab-title='Shorts']) {
   display: none !important;
 }
 
+/* --- hide recommended playlists/Mixes (toggled via html.syf-hide-recommended-playlists) --- */
+html.syf-hide-recommended-playlists ytd-browse[page-subtype='home'] ytd-rich-item-renderer:has(a[href*='list=']),
+html.syf-hide-recommended-playlists ytd-browse[page-subtype='home'] yt-lockup-view-model:has(a[href*='list=']),
+html.syf-hide-recommended-playlists ytd-browse[page-subtype='home'] ytd-rich-item-renderer:has(ytd-playlist-renderer),
+html.syf-hide-recommended-playlists ytd-browse[page-subtype='home'] ytd-rich-item-renderer:has(ytd-grid-playlist-renderer),
+html.syf-hide-recommended-playlists ytd-browse[page-subtype='home'] ytd-rich-item-renderer:has(ytd-radio-renderer),
+html.syf-hide-recommended-playlists ytd-browse[page-subtype='home'] ytd-playlist-renderer,
+html.syf-hide-recommended-playlists ytd-browse[page-subtype='home'] ytd-grid-playlist-renderer,
+html.syf-hide-recommended-playlists ytd-browse[page-subtype='home'] ytd-compact-playlist-renderer,
+html.syf-hide-recommended-playlists ytd-browse[page-subtype='home'] ytd-radio-renderer,
+html.syf-hide-recommended-playlists ytd-browse[page-subtype='home'] ytd-compact-radio-renderer,
+html.syf-hide-recommended-playlists ytd-watch-next-secondary-results-renderer ytd-compact-video-renderer:has(a[href*='list=']),
+html.syf-hide-recommended-playlists ytd-watch-next-secondary-results-renderer yt-lockup-view-model:has(a[href*='list=']),
+html.syf-hide-recommended-playlists ytd-watch-next-secondary-results-renderer ytd-rich-item-renderer:has(a[href*='list=']),
+html.syf-hide-recommended-playlists ytd-watch-next-secondary-results-renderer ytd-compact-playlist-renderer,
+html.syf-hide-recommended-playlists ytd-watch-next-secondary-results-renderer ytd-compact-radio-renderer,
+html.syf-hide-recommended-playlists ytd-watch-next-secondary-results-renderer ytd-playlist-renderer,
+html.syf-hide-recommended-playlists ytd-watch-next-secondary-results-renderer ytd-radio-renderer {
+  display: none !important;
+}
+
 /* --- wipe dialog --- */
 .syf-wipe-body {
   padding: 14px 16px;

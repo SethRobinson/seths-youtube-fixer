@@ -170,6 +170,8 @@ export interface SyfSettings {
   commentSearchReplies?: boolean; // "Find in comments": remembered state of the "Replies too" checkbox
   apiDailyQuota?: number; // your YouTube Data API daily quota (units); for the "used today" gauge
   hideShorts?: boolean; // hide Shorts shelves/cards from feeds
+  hideRecommendedPlaylists?: boolean; // hide playlist/Mix cards from YouTube recommendation surfaces
+  hideHomePlaylists?: boolean; // legacy setting key; honored as a fallback for hideRecommendedPlaylists
   lastHistoryPaused?: boolean; // cached watch-history state for the bar toggle label
   dismissedWarnings?: Record<string, boolean>; // "don't show again" flags (e.g. { history: true })
 }

@@ -46,6 +46,10 @@ Search **every** public comment and reply on a video, something YouTube itself w
 
 A single toggle hides Shorts shelves, cards, and the sidebar link across YouTube.
 
+### Hide playlists from recommendations
+
+A single toggle hides playlist and Mix recommendations on Home and in the Watch page sidebar. It is local display filtering only: it does not submit feedback to YouTube or change recommendations on other devices.
+
 ## Beware
 
 Some of these features are 'brittle', if youtube.com changes its internal APIs or page structure, uh, this may break.  No guarantees I'll be around to fix it, but, hey, the source is right here.

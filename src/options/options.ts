@@ -26,6 +26,7 @@ const ttlInput = $<HTMLInputElement>('ttlDays');
 const maxVideosInput = $<HTMLInputElement>('maxVideos');
 const scanCapInput = $<HTMLInputElement>('scanCap');
 const hideShorts = $<HTMLInputElement>('hideShorts');
+const hideRecommendedPlaylists = $<HTMLInputElement>('hideRecommendedPlaylists');
 const savedMsg = $<HTMLDivElement>('savedMsg');
 const logEl = $<HTMLDivElement>('log');
 const logStatus = $<HTMLDivElement>('logStatus');
@@ -56,6 +57,7 @@ async function initSettings() {
   scanCapInput.value = String(s.commentScanCap ?? DEFAULT_SCAN_CAP);
   dailyQuotaInput.value = String(s.apiDailyQuota ?? DEFAULT_DAILY_QUOTA);
   hideShorts.checked = !!s.hideShorts;
+  hideRecommendedPlaylists.checked = !!(s.hideRecommendedPlaylists ?? s.hideHomePlaylists);
 }
 
 // Reveal/hide the API key (masked by default so it isn't shoulder-surfed).
@@ -118,6 +120,7 @@ function commitApiKey(): void {
 }
 
 hideShorts.addEventListener('change', () => void patchSettings({ hideShorts: hideShorts.checked }));
+hideRecommendedPlaylists.addEventListener('change', () => void patchSettings({ hideRecommendedPlaylists: hideRecommendedPlaylists.checked }));
 ttlInput.addEventListener('change', commitTtl);
 maxVideosInput.addEventListener('change', () => void commitMaxVideos());
 scanCapInput.addEventListener('change', commitScanCap);

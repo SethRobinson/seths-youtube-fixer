@@ -129,8 +129,15 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     removed.
   - **Find in comments** opens settings/options (with a toast) when no API key is set.
   - **Hide Shorts** setting toggles `html.syf-hide-shorts`; CSS hides Shorts shelves/cards/nav (live
-    via `storage.onChanged`). Settings include `hideShorts`, `feedbackTtlDays`, `maxCacheVideos`,
-    `lastHistoryPaused`, `dismissedWarnings`. No current setting needs a page reload (all apply live).
+    via `storage.onChanged`). **Hide playlists from recommendations** toggles
+    `html.syf-hide-recommended-playlists` and locally hides playlist/Mix recommendation cards on Home
+    (`ytd-browse[page-subtype="home"]`) and in the Watch page sidebar
+    (`ytd-watch-next-secondary-results-renderer`), plus legacy playlist/radio renderer fallbacks. It
+    deliberately does **not** submit "Not interested" or mutate YouTube recommendation data.
+    `hideHomePlaylists` is still honored as a legacy fallback, but options writes
+    `hideRecommendedPlaylists`. Settings include `hideShorts`, `hideRecommendedPlaylists`,
+    `feedbackTtlDays`, `maxCacheVideos`, `lastHistoryPaused`, `dismissedWarnings`. No current setting
+    needs a page reload (all apply live).
 - **Release prep (2026-06-17 — public-release pass):** rewrote `README.md` for end users
   (features + screenshots in `docs/images/` + Load-unpacked install for Chrome/Brave);
   **added extension icons** (`src/icons/` 16/32/48/128 generated via System.Drawing, wired
@@ -336,7 +343,9 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
 
 Dev/test scripts in `scripts/`: recon-feedback, recon-undo, recon-myactivity(2), measure-feedback,
 validate-replay, test-click, test-undo, test-toggle-log, test-native, test-toast, test-wipe-scan,
-test-wipe-ui, test-comment-search, test-comment-cache, debug-ma, diag, **release-shots** (release
+test-wipe-ui, test-comment-search, test-comment-cache, **test-recommended-playlists** (READ-ONLY:
+temporarily toggles the local setting and validates Home + Watch-sidebar playlist hiding while
+restoring settings), debug-ma, diag, **release-shots** (release
 validation: regenerates the README comment-search screenshots + checks both 2026-06-17 security
 fixes — dynamic iframe rule via DNR state, and isolated-world feedback apply/undo), **recon-i18n**
 (READ-ONLY i18n validation: renders /feed/history + My Activity in ja/fr/de/es/ko via the
@@ -414,7 +423,7 @@ correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
   YouTube-themed; top = API search results, bottom = the real watch page framed at the clicked comment.
 - `src/rules/iframe-rules.json` — `declarativeNetRequest` ruleset: strips `X-Frame-Options`/CSP on
   framed `youtube.com/watch` loads so the bottom pane can embed the real page.
-- `src/options/`, `src/popup/` — options page (API key, hide-shorts, TTL, **action log**, reset;
+- `src/options/`, `src/popup/` — options page (API key, hide-shorts, hide-recommended-playlists, TTL, **action log**, reset;
   also opened in-page as the **ℹ Info** dialog) and toolbar popup.
 - `src/wipe/` — standalone Forget recent page, opened in a new tab via `wipe.html?minutes=N&authuser=N&pageId=<brandId>`.
   (The old standalone `src/log/` page was removed — the action log now lives in the options page.)
