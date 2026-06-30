@@ -173,6 +173,11 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
   `CHROME_WEB_STORE_REVIEW.md` (verdict: fine to install privately; a store listing still
   needs a hosted privacy policy + the framing/internal-endpoint automation is a real
   §4.4.1/YouTube-ToS takedown risk) and `SECURITY_REVIEW.md`.
+- **Release 0.1.1 (2026-06-30):** bumped `package.json`/`package-lock.json` and
+  `src/manifest.json` from 0.1.0 to 0.1.1, verified `npm run typecheck`, then ran
+  `build_release.bat` to produce `releases/seths-youtube-fixer-latest.zip` with
+  manifest version 0.1.1. Uploaded that zip to the stable RTsoft download path via
+  `upload-to-rtsoft.bat`.
 - **Security hardening (2026-06-17 — both fixed + validated in real signed-in Chrome via
   `scripts/release-shots.mjs`):**
   1. **iframe header-strip rule is now DYNAMIC.** `syf_iframe` ships `enabled:false`; the SW
@@ -456,6 +461,8 @@ correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
 - `scripts/` — esbuild build + CDP harness (`chrome-lib`, `setup`, `drive`, `reload`, `diag`).
   `build.mjs` drops sourcemaps when `SYF_RELEASE=1`.
 - `build_release.bat` — production build (`SYF_RELEASE=1`) → zips `dist/` to `releases/`.
+- `upload-to-rtsoft.bat` — uploads `releases/seths-youtube-fixer-latest.zip` to the stable
+  RTsoft download path using the local RTsoft SSH helper.
 - `docs/` — `images/` (README screenshots), `CHROME_WEB_STORE_REVIEW.md`, `SECURITY_REVIEW.md`.
 - `PRIVACY.md` — privacy-policy draft (host at a URL before any store listing).
 - `test/` — Playwright (`fixtures.ts` attaches over CDP; `smoke.spec.ts`).
@@ -469,6 +476,7 @@ correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
 - `npm run drive` — rebuild + reload + smoke (injects bar, screenshots `test-results/`).
 - `npm test` — rebuild + reload + full Playwright suite.
 - `build_release.bat` — production build + zip to `releases/` (Windows; double-click or run).
+- `upload-to-rtsoft.bat` — upload the latest release zip to RTsoft after building it.
 
 ## Critical: how dynamic testing works (do NOT re-derive this)
 

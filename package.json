@@ -1,6 +1,6 @@
 {
   "name": "seths-youtube-fixer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Power-user controls for YouTube: Less like this, Don't recommend channel, forget recent activity, and comment search.",
   "type": "module",
