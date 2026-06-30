@@ -1,7 +1,7 @@
 <div align="center">
   <img src="docs/images/icon128.png" width="96" height="96" alt="Seth's YouTube Fixer icon" />
   <h1>Seth's YouTube Fixer</h1>
-  <p><b>Take back control of YouTube.</b> Tell it what you don't want, forget what you just watched, and search every comment on a video, all from one small bar under the player.</p>
+  <p><b>Take back control of YouTube.</b> Tell it what you don't want, remember your Home topic, forget what you just watched, and search every comment on a video.</p>
 </div>
 
 <p align="center">
@@ -50,6 +50,10 @@ A single toggle hides Shorts shelves, cards, and the sidebar link across YouTube
 
 A single toggle hides playlist and Mix recommendations on Home and in the Watch page sidebar. It is local display filtering only: it does not submit feedback to YouTube or change recommendations on other devices.
 
+### Remember Home topic chip
+
+Click a topic chip on YouTube Home, like Gaming or Recently uploaded, and the extension remembers that choice locally. The next time Home loads, it selects that chip again automatically. Clicking All clears the remembered chip.
+
 ## Beware
 
 Some of these features are 'brittle', if youtube.com changes its internal APIs or page structure, uh, this may break.  No guarantees I'll be around to fix it, but, hey, the source is right here.
@@ -94,7 +98,7 @@ Settings also show an **estimate of how much of your daily Google YouTube API qu
 ## Privacy
 
 - **Everything stays in your browser.** No analytics, no telemetry, no third-party servers.
-- The extension stores, locally: captured feedback actions, video and channel IDs and titles, your API key, and a short-lived in-memory comment cache.
+- The extension stores, locally: captured feedback actions, video and channel IDs and titles, your remembered Home topic chip, your API key, and a short-lived in-memory comment cache.
 - It **never** stores your Google password, cookies, or session tokens.
 - The only network calls are to **YouTube** (your own logged-in session, the same actions the site already offers) and **Google's API** (only for comment search, with your key).
 - **Reset data for this extension** (in Settings) erases all of the above at any time.

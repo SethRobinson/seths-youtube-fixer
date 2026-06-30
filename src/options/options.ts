@@ -27,6 +27,9 @@ const maxVideosInput = $<HTMLInputElement>('maxVideos');
 const scanCapInput = $<HTMLInputElement>('scanCap');
 const hideShorts = $<HTMLInputElement>('hideShorts');
 const hideRecommendedPlaylists = $<HTMLInputElement>('hideRecommendedPlaylists');
+const rememberHomeChip = $<HTMLInputElement>('rememberHomeChip');
+const rememberedHomeChipText = $<HTMLElement>('rememberedHomeChipText');
+const clearHomeChip = $<HTMLButtonElement>('clearHomeChip');
 const savedMsg = $<HTMLDivElement>('savedMsg');
 const logEl = $<HTMLDivElement>('log');
 const logStatus = $<HTMLDivElement>('logStatus');
@@ -58,6 +61,14 @@ async function initSettings() {
   dailyQuotaInput.value = String(s.apiDailyQuota ?? DEFAULT_DAILY_QUOTA);
   hideShorts.checked = !!s.hideShorts;
   hideRecommendedPlaylists.checked = !!(s.hideRecommendedPlaylists ?? s.hideHomePlaylists);
+  rememberHomeChip.checked = s.rememberHomeChip !== false;
+  renderRememberedHomeChip(s);
+}
+
+function renderRememberedHomeChip(s: SyfSettings): void {
+  const label = s.rememberedHomeChip?.label?.trim();
+  rememberedHomeChipText.textContent = label || 'None';
+  clearHomeChip.disabled = !label;
 }
 
 // Reveal/hide the API key (masked by default so it isn't shoulder-surfed).
@@ -121,6 +132,11 @@ function commitApiKey(): void {
 
 hideShorts.addEventListener('change', () => void patchSettings({ hideShorts: hideShorts.checked }));
 hideRecommendedPlaylists.addEventListener('change', () => void patchSettings({ hideRecommendedPlaylists: hideRecommendedPlaylists.checked }));
+rememberHomeChip.addEventListener('change', () => void patchSettings({ rememberHomeChip: rememberHomeChip.checked }));
+clearHomeChip.addEventListener('click', async () => {
+  await patchSettings({ rememberedHomeChip: null });
+  renderRememberedHomeChip({ ...(await loadSettings()), rememberedHomeChip: null });
+});
 ttlInput.addEventListener('change', commitTtl);
 maxVideosInput.addEventListener('change', () => void commitMaxVideos());
 scanCapInput.addEventListener('change', commitScanCap);
@@ -136,6 +152,13 @@ apiKey.addEventListener('input', () => {
 apiKey.addEventListener('change', () => {
   clearTimeout(keyTimer);
   commitApiKey();
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes[SETTINGS_KEY]) return;
+  const s = { ...DEFAULT_SETTINGS, ...(changes[SETTINGS_KEY].newValue ?? {}) } as SyfSettings;
+  rememberHomeChip.checked = s.rememberHomeChip !== false;
+  renderRememberedHomeChip(s);
 });
 
 resetQuotaLink.addEventListener('click', async (e) => {

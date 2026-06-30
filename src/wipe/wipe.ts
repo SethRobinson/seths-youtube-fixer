@@ -54,23 +54,34 @@ function renderPick(): void {
   };
   root.querySelector('#customGo')!.addEventListener('click', go);
   cmin.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') go();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      go();
+    }
   });
+}
+
+function contextInvalidatedMessage(): string {
+  return 'The extension was reloaded while this page was open. Close this tab and open Forget recent again from YouTube.';
 }
 
 async function scan(minutes: number): Promise<void> {
   root.innerHTML = `<div class="loading">Scanning ${activityLink()} for the last ${minutes} min… (opens My Activity in a background tab — this can take ~10s)</div>`;
   const endMs = Date.now();
   const startMs = endMs - minutes * 60_000;
-  const res = await chrome.runtime.sendMessage({
-    type: 'SYF_WIPE',
-    mode: 'scan',
-    startMs,
-    endMs,
-    authUser: AUTH_USER,
-    pageId: PAGE_ID,
-  } as SyfMessage);
-  renderReview(startMs, endMs, res);
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: 'SYF_WIPE',
+      mode: 'scan',
+      startMs,
+      endMs,
+      authUser: AUTH_USER,
+      pageId: PAGE_ID,
+    } as SyfMessage);
+    renderReview(startMs, endMs, res);
+  } catch {
+    withBack(`<div class="error">${contextInvalidatedMessage()}</div>`);
+  }
 }
 
 function renderReview(startMs: number, endMs: number, res: any): void {
@@ -98,14 +109,20 @@ function renderReview(startMs: number, endMs: number, res: any): void {
 
 async function doDelete(startMs: number, endMs: number, count: number): Promise<void> {
   root.innerHTML = `<div class="loading">Deleting ${count} item(s) via My Activity…</div>`;
-  const res = await chrome.runtime.sendMessage({
-    type: 'SYF_WIPE',
-    mode: 'delete',
-    startMs,
-    endMs,
-    authUser: AUTH_USER,
-    pageId: PAGE_ID,
-  } as SyfMessage);
+  let res: any;
+  try {
+    res = await chrome.runtime.sendMessage({
+      type: 'SYF_WIPE',
+      mode: 'delete',
+      startMs,
+      endMs,
+      authUser: AUTH_USER,
+      pageId: PAGE_ID,
+    } as SyfMessage);
+  } catch {
+    withBack(`<div class="error">${contextInvalidatedMessage()}</div>`);
+    return;
+  }
   if (res?.ok) {
     withBack(`<div class="done">✓ Deleted ${res.deleted ?? 0} item(s) from ${activityLink()}, ${fmtTime(startMs)} to ${fmtTime(endMs)}.</div>`);
   } else {

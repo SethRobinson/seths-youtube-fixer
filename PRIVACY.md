@@ -1,6 +1,6 @@
 # Privacy Policy for Seth's YouTube Fixer
 
-_Last updated: 2026-06-17_
+_Last updated: 2026-06-30_
 
 Seth's YouTube Fixer is a browser extension that adds controls to YouTube. This policy
 explains exactly what it does and does not do with your data. The short version:
@@ -17,7 +17,8 @@ Using Chrome's `storage.local`, on your device:
   "Don't recommend channel" buttons and the action log.
 - **An action log:** a record of feedback actions you took, so you can undo or redo them.
 - **Your settings:** including your optional YouTube Data API key (used only for comment
-  search), the Hide Shorts toggle, and cache limits.
+  search), the Hide Shorts toggle, the remembered YouTube Home topic chip label, and
+  cache limits.
 - **A short-lived comment cache:** when you use "Find in comments", fetched comments are
   held **in memory only, for about 5 minutes, and discarded when you close the window.**
 

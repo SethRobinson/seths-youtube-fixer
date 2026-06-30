@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Seth's YouTube Fixer",
   "version": "0.1.0",
-  "description": "Power-user controls for YouTube: Less like this, Don't recommend channel, forget recent activity, and comment search.",
+  "description": "Power-user controls for YouTube: feedback shortcuts, remembered Home topics, forget recent activity, and comment search.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -39,7 +39,7 @@
       "matches": ["https://www.youtube.com/*"],
       "js": ["content/youtube.js"],
       "css": ["content/styles.css"],
-      "run_at": "document_idle",
+      "run_at": "document_start",
       "world": "ISOLATED"
     },
     {

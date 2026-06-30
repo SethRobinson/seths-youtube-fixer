@@ -51,6 +51,9 @@
       .check input { margin-top: 3px; }
       .check label { margin: 0; }
       button { padding: 10px 20px; border: none; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+      button.secondary { background: #eef0f4; color: #0f0f0f; border: 1px solid #ccd0d8; }
+      button.small { padding: 5px 12px; border-radius: 16px; font-size: 12px; }
+      button:disabled { opacity: 0.5; cursor: default; }
       button.danger { background: #cc0000; }
       button:hover { filter: brightness(1.05); }
       /* auto-save confirmation toast (fixed, fades in/out) */
@@ -73,6 +76,8 @@
       .toast.show { opacity: 1; transform: translateY(0); }
       .meter { background: #eef0f4; border-radius: 8px; height: 8px; overflow: hidden; margin: 8px 0 4px; }
       .meter > span { display: block; height: 100%; background: var(--accent); width: 0; }
+      .remember-chip { margin: 8px 0 0 27px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: #5f6368; }
+      .remember-chip b { color: #0f0f0f; }
       /* action log */
       #logStatus { min-height: 16px; color: #b26a00; font-size: 13px; }
       .logrow { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-bottom: 1px solid #eef0f4; }
@@ -143,6 +148,14 @@
       <div class="check">
         <input id="hideRecommendedPlaylists" type="checkbox" />
         <label for="hideRecommendedPlaylists">Hide playlists from recommendations<small>Hides playlist and Mix recommendations on Home and in the Watch page sidebar. Applies immediately.</small></label>
+      </div>
+      <div class="check">
+        <input id="rememberHomeChip" type="checkbox" />
+        <label for="rememberHomeChip">Remember Home topic chip<small>When you click a non-All topic chip on YouTube Home, select it again automatically after refresh or the next Home visit. Clicking All clears it.</small></label>
+      </div>
+      <div class="remember-chip">
+        <span>Remembered chip: <b id="rememberedHomeChipText">None</b></span>
+        <button id="clearHomeChip" type="button" class="secondary small">Clear</button>
       </div>
     </section>
 

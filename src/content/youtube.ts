@@ -12,6 +12,8 @@ import {
 
 const TAG = '[SYF]';
 const BAR_ID = 'syf-bar';
+const HOME_CHIP_SELECTOR =
+  'ytd-feed-filter-chip-bar-renderer yt-chip-cloud-chip-renderer[chip-style="STYLE_HOME_FILTER"]';
 
 const NAH_TIP = 'Send YouTube’s real “Not interested” for this video.';
 const HATE_TIP = 'Send YouTube’s real “Don’t recommend channel” for this creator.';
@@ -68,6 +70,7 @@ function applySettings(s: SyfSettings): void {
   document.documentElement.classList.toggle('syf-hide-recommended-playlists', hideRecommendedPlaylists);
   updateHistoryButton();
   updateFindCommentsButton();
+  scheduleHomeChipMemory();
 }
 
 // "Find in comments" is a normal (ready) button once an API key exists; it stays
@@ -192,6 +195,223 @@ function showToast(message: string): void {
     t.classList.remove('syf-toast-show');
     setTimeout(() => t.remove(), 250);
   }, 6500);
+}
+
+// --- YouTube Home topic-chip memory -----------------------------------------
+// YouTube's Home topic chips are currently single-select and reset to "All" on a
+// refresh. We remember the last non-All chip the user clicked, then replay that
+// UI click on the next Home load. This deliberately uses YouTube's own DOM/UI
+// action instead of fabricating internal browse requests.
+let autoSelectingHomeChip = false;
+let homeChipTimer: ReturnType<typeof setTimeout> | null = null;
+let homeChipRetryUntil = 0;
+let lastHomeChipAutoKey = '';
+let lastHomeChipAutoAt = 0;
+let homeChipRevealTimer: ReturnType<typeof setTimeout> | null = null;
+
+function isHomePage(): boolean {
+  return location.pathname === '/';
+}
+
+function normalizeChipLabel(s: unknown): string {
+  return String(s ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function homeChips(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>(HOME_CHIP_SELECTOR)).filter((c) => normalizeChipLabel(c.textContent));
+}
+
+function chipLabel(chip: HTMLElement): string {
+  return normalizeChipLabel(chip.textContent);
+}
+
+function isChipSelected(chip: HTMLElement): boolean {
+  return chip.hasAttribute('selected') || chip.classList.contains('iron-selected');
+}
+
+function isAllChip(chip: HTMLElement, chips = homeChips()): boolean {
+  const data = (chip as any).data;
+  return chipLabel(chip).toLowerCase() === 'all' || (chips[0] === chip && !data?.navigationEndpoint);
+}
+
+function rememberedHomeChipMatchesAccount(): boolean {
+  const saved = settings.rememberedHomeChip;
+  if (!saved) return false;
+  if (saved.accountId && ytConfig?.accountId && saved.accountId !== ytConfig.accountId) return false;
+  if (saved.authUser && ytConfig?.authUser && saved.authUser !== String(ytConfig.authUser)) return false;
+  if (saved.pageId && activePageId() && normalizePageId(saved.pageId) !== activePageId()) return false;
+  return true;
+}
+
+function setHomeChipApplying(on: boolean, revealDelay = 0): void {
+  if (homeChipRevealTimer) {
+    clearTimeout(homeChipRevealTimer);
+    homeChipRevealTimer = null;
+  }
+  if (!on) {
+    homeChipRevealTimer = setTimeout(() => {
+      homeChipRevealTimer = null;
+      document.documentElement.classList.remove('syf-home-chip-applying');
+    }, revealDelay);
+    return;
+  }
+  document.documentElement.classList.add('syf-home-chip-applying');
+}
+
+function scheduleHomeChipMemory(delay = 0, extendWindow = true): void {
+  if (!isHomePage()) {
+    homeChipRetryUntil = 0;
+    setHomeChipApplying(false);
+    if (homeChipTimer) {
+      clearTimeout(homeChipTimer);
+      homeChipTimer = null;
+    }
+    return;
+  }
+  if (extendWindow) homeChipRetryUntil = Math.max(homeChipRetryUntil, Date.now() + 15_000);
+  if (homeChipTimer) return;
+  homeChipTimer = setTimeout(() => {
+    homeChipTimer = null;
+    const done = ensureHomeChipMemory();
+    if (!done && Date.now() < homeChipRetryUntil) scheduleHomeChipMemory(500, false);
+  }, delay);
+}
+
+function ensureHomeChipMemory(): boolean {
+  if (!isHomePage()) return true;
+  const saved = settings.rememberedHomeChip;
+  const wanted = normalizeChipLabel(saved?.label);
+  if (settings.rememberHomeChip === false || !wanted || !rememberedHomeChipMatchesAccount()) {
+    setHomeChipApplying(false);
+    return true;
+  }
+
+  const chips = homeChips();
+  if (!chips.length) return false;
+  const selected = chips.find(isChipSelected);
+  const selectedLabel = selected ? chipLabel(selected) : '';
+  if (selectedLabel === wanted) {
+    setHomeChipApplying(false, 700);
+    return Date.now() >= homeChipRetryUntil;
+  }
+
+  // Respect any non-All chip that YouTube or the user has already selected. The
+  // common refresh/default case is "All", which is the only state we override.
+  if (selected && !isAllChip(selected, chips)) {
+    setHomeChipApplying(false);
+    return true;
+  }
+
+  const target = chips.find((chip) => chipLabel(chip) === wanted);
+  if (!target) {
+    if (Date.now() >= homeChipRetryUntil) setHomeChipApplying(false);
+    return false;
+  }
+
+  const key = `${wanted}\n${saved?.updatedAt ?? 0}\n${location.href}`;
+  const now = Date.now();
+  if (lastHomeChipAutoKey === key && now - lastHomeChipAutoAt < 1500) return false;
+  lastHomeChipAutoKey = key;
+  lastHomeChipAutoAt = now;
+
+  const clickTarget = target.querySelector<HTMLElement>('chip-shape button, button, a') || target;
+  autoSelectingHomeChip = true;
+  setHomeChipApplying(true);
+  target.scrollIntoView({ block: 'nearest', inline: 'center' });
+  clickTarget.click();
+  setTimeout(() => {
+    autoSelectingHomeChip = false;
+  }, 0);
+  return false;
+}
+
+function showHomeChipToast(message: string, chip: HTMLElement): void {
+  document.getElementById('syf-home-chip-toast')?.remove();
+  const t = document.createElement('div');
+  t.id = 'syf-home-chip-toast';
+  t.className = 'syf-home-chip-toast';
+  t.textContent = message;
+  t.addEventListener('click', () => t.remove());
+  document.body.appendChild(t);
+
+  const chipRect = chip.getBoundingClientRect();
+  const barRect = chip.closest('ytd-feed-filter-chip-bar-renderer')?.getBoundingClientRect();
+  const rect = chipRect.width > 0 && chipRect.height > 0 ? chipRect : barRect;
+  if (rect) {
+    const left = Math.min(Math.max(rect.left + rect.width / 2, 140), window.innerWidth - 140);
+    const top = Math.min(Math.max(rect.bottom + 8, 72), window.innerHeight - 80);
+    t.style.left = `${left}px`;
+    t.style.top = `${top}px`;
+  }
+
+  requestAnimationFrame(() => t.classList.add('syf-home-chip-toast-show'));
+  setTimeout(() => {
+    t.classList.remove('syf-home-chip-toast-show');
+    setTimeout(() => t.remove(), 200);
+  }, 2250);
+}
+
+function clickAllHomeChip(chips = homeChips()): void {
+  const allChip = chips.find((chip) => isAllChip(chip, chips));
+  if (!allChip || isChipSelected(allChip)) return;
+  const clickTarget = allChip.querySelector<HTMLElement>('chip-shape button, button, a') || allChip;
+  autoSelectingHomeChip = true;
+  clickTarget.click();
+  setTimeout(() => {
+    autoSelectingHomeChip = false;
+  }, 0);
+}
+
+function clearRememberedHomeChip(chip: HTMLElement, selectAll = false, showToast = true): void {
+  homeChipRetryUntil = 0;
+  setHomeChipApplying(false);
+  if (homeChipTimer) {
+    clearTimeout(homeChipTimer);
+    homeChipTimer = null;
+  }
+  const chips = homeChips();
+  settings = { ...settings, rememberedHomeChip: null };
+  chrome.runtime
+    ?.sendMessage?.({ type: 'SYF_PATCH_SETTINGS', patch: { rememberedHomeChip: null } } as SyfMessage)
+    .catch(() => {});
+  if (selectAll) setTimeout(() => clickAllHomeChip(chips), 0);
+  if (showToast) showHomeChipToast("Seth's YouTube Fixer forgot this Home chip.", chip);
+}
+
+function onHomeChipUserClick(e: MouseEvent): void {
+  if (!e.isTrusted || autoSelectingHomeChip || settings.rememberHomeChip === false || !isHomePage()) return;
+  const chip = (e.target as Element | null)?.closest?.(HOME_CHIP_SELECTOR) as HTMLElement | null;
+  if (!chip) return;
+  const chips = homeChips();
+  const label = chipLabel(chip);
+  if (!label) return;
+
+  if (isAllChip(chip, chips)) {
+    if (settings.rememberedHomeChip) {
+      clearRememberedHomeChip(chip, false, false);
+    }
+    return;
+  }
+
+  if (isChipSelected(chip)) {
+    clearRememberedHomeChip(chip, true);
+    return;
+  }
+
+  const rememberedHomeChip: NonNullable<SyfSettings['rememberedHomeChip']> = {
+    label,
+    updatedAt: Date.now(),
+  };
+  if (ytConfig?.accountId) rememberedHomeChip.accountId = String(ytConfig.accountId);
+  const authUser = activeAuthUser();
+  if (authUser) rememberedHomeChip.authUser = authUser;
+  const pageId = activePageId();
+  if (pageId) rememberedHomeChip.pageId = pageId;
+  settings = { ...settings, rememberedHomeChip };
+  chrome.runtime
+    ?.sendMessage?.({ type: 'SYF_PATCH_SETTINGS', patch: { rememberedHomeChip } } as SyfMessage)
+    .catch(() => {});
+  showHomeChipToast(`Seth's YouTube Fixer will remember that: "${label}".`, chip);
 }
 
 // --- authenticated feedback submission (POST /youtubei/v1/feedback) ---
@@ -419,15 +639,19 @@ function openWipePresets(): void {
   panel.querySelector('.syf-modal-close')!.addEventListener('click', () => overlay.remove());
   const open = (m: number) => {
     overlay.remove();
-    chrome.runtime
-      ?.sendMessage?.({
-        type: 'SYF_OPEN_PAGE',
-        page: 'wipe',
-        minutes: m,
-        authUser: activeAuthUser(),
-        pageId: activePageId(),
-      } as SyfMessage)
-      .catch(() => {});
+    try {
+      chrome.runtime
+        ?.sendMessage?.({
+          type: 'SYF_OPEN_PAGE',
+          page: 'wipe',
+          minutes: m,
+          authUser: activeAuthUser(),
+          pageId: activePageId(),
+        } as SyfMessage)
+        .catch(() => notifyIfContextLost());
+    } catch {
+      notifyIfContextLost();
+    }
   };
   panel.querySelectorAll('.syf-wipe-preset').forEach((b) =>
     b.addEventListener('click', () => open(Number((b as HTMLElement).dataset.min)))
@@ -439,7 +663,10 @@ function openWipePresets(): void {
   };
   panel.querySelector('#syf-wipe-go')!.addEventListener('click', go);
   cmin.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') go();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      go();
+    }
   });
   overlay.appendChild(panel);
   document.body.appendChild(overlay);
@@ -647,6 +874,7 @@ window.addEventListener('message', (e: MessageEvent) => {
         pageId: d.pageId,
       };
       reportAccount(d.accountId, d.authUser, d.pageId);
+      scheduleHomeChipMemory();
       break;
     }
     case 'NATIVE_ACTION': {
@@ -731,6 +959,12 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
 // fast-click-from-sidebar race. Capture phase so it runs before YouTube navigates.
 document.addEventListener(
   'click',
+  onHomeChipUserClick,
+  true
+);
+
+document.addEventListener(
+  'click',
   (e) => {
     const a = (e.target as Element | null)?.closest?.('a[href*="/watch?v="]');
     if (!a) return;
@@ -748,6 +982,7 @@ function schedule(): void {
   requestAnimationFrame(() => {
     scheduled = false;
     ensureBar();
+    ensureHomeChipMemory();
   });
 }
 
@@ -761,6 +996,17 @@ const observer = new MutationObserver(() => schedule());
 let observing = false;
 function observeForChanges(): void {
   if (observing) return;
+  if (!document.documentElement) {
+    document.addEventListener(
+      'DOMContentLoaded',
+      () => {
+        observeForChanges();
+        schedule();
+      },
+      { once: true }
+    );
+    return;
+  }
   observing = true;
   observer.observe(document.documentElement, { childList: true, subtree: true });
 }
@@ -772,6 +1018,8 @@ function stopObserving(): void {
 // A navigation tears down our bar; re-arm the observer so we catch the new mount as
 // the page re-renders, then ensureBar() disconnects it again once the bar is in place.
 function onNav(): void {
+  lastHomeChipAutoKey = '';
+  scheduleHomeChipMemory();
   observeForChanges();
   schedule();
 }

@@ -160,6 +160,14 @@ export const QUOTA_KEY = 'syf.quota';
 // Activity helper tabs to the account/channel the user is actually viewing. None are credentials.
 export const ACCOUNT_KEY = 'syf.account';
 
+export interface RememberedHomeChip {
+  label: string;
+  accountId?: string;
+  authUser?: string;
+  pageId?: string;
+  updatedAt: number;
+}
+
 export interface SyfSettings {
   apiKey?: string;
   wipePresetsMin?: number[];
@@ -172,6 +180,8 @@ export interface SyfSettings {
   hideShorts?: boolean; // hide Shorts shelves/cards from feeds
   hideRecommendedPlaylists?: boolean; // hide playlist/Mix cards from YouTube recommendation surfaces
   hideHomePlaylists?: boolean; // legacy setting key; honored as a fallback for hideRecommendedPlaylists
+  rememberHomeChip?: boolean; // remember the last non-All YouTube Home topic chip and replay it on Home
+  rememberedHomeChip?: RememberedHomeChip | null; // visible chip label + optional account metadata
   lastHistoryPaused?: boolean; // cached watch-history state for the bar toggle label
   dismissedWarnings?: Record<string, boolean>; // "don't show again" flags (e.g. { history: true })
 }
@@ -186,6 +196,8 @@ export const DEFAULT_SETTINGS: SyfSettings = {
   commentSearchReplies: false,
   apiDailyQuota: DEFAULT_DAILY_QUOTA,
   hideShorts: false,
+  rememberHomeChip: true,
+  rememberedHomeChip: null,
 };
 
 // Storage keys cleared by "Reset data for this extension".

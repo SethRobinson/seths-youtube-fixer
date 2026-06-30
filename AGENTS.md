@@ -9,8 +9,7 @@
 ## What this is
 
 A Manifest V3 Chromium extension (TypeScript + esbuild) adding power-user controls to
-YouTube. Personal project; owner is Seth. Four features, on a button bar injected onto
-the watch page:
+YouTube. Personal project; owner is Seth. Main features:
 
 1. **Less like this** — submit YouTube's real *Not interested* feedback for the current video.
 2. **Don't recommend channel** — submit YouTube's real *Don't recommend channel* feedback.
@@ -18,6 +17,8 @@ the watch page:
 4. **Find in comments** — opens a separate two-pane window: search every public comment/reply on the
    current video via the YouTube Data API (top), click a match to open the real YouTube page at that
    comment (bottom) and Like/Reply natively. (DONE — see Feature 3 in Status.)
+5. **Remember Home topic chip** — locally remember the last non-All YouTube Home topic chip and
+   replay YouTube's own chip click on the next Home load.
 
 The two feedback buttons work by capturing YouTube's internal feedback endpoints from
 recommendation cards and replaying them — **never fabricated**. They stay grayed (but still
@@ -135,7 +136,27 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     (`ytd-watch-next-secondary-results-renderer`), plus legacy playlist/radio renderer fallbacks. It
     deliberately does **not** submit "Not interested" or mutate YouTube recommendation data.
     `hideHomePlaylists` is still honored as a legacy fallback, but options writes
-    `hideRecommendedPlaylists`. Settings include `hideShorts`, `hideRecommendedPlaylists`,
+    `hideRecommendedPlaylists`.
+  - **Remember Home topic chip (2026-06-30):** YouTube Home's ordinary topic chips are single-select
+    and reset to "All" on refresh (live-validated). `youtube.ts` listens for trusted clicks on
+    `ytd-feed-filter-chip-bar-renderer yt-chip-cloud-chip-renderer[chip-style="STYLE_HOME_FILTER"]`;
+    clicking a non-All chip stores `settings.rememberedHomeChip` (visible label + optional account
+    metadata) and shows an anchored toast near the chip bar. Clicking the first/All chip clears it;
+    clicking the currently selected remembered non-All chip again also clears it and reselects All.
+    On the next Home load, if `settings.rememberHomeChip !== false` and the label is present, the
+    content script retries for a short hydration window and replays YouTube's own chip button click
+    (guarded so the synthetic click doesn't re-save/show a toast), continuing to monitor briefly in
+    case YouTube flips back to All during hydration. Live probe: chip clicks keep `location.href` at
+    `https://www.youtube.com/`, do not push history, and use `continuationCommand` + `POST
+    /youtubei/v1/browse` (`webCommandMetadata.sendPost`, `apiUrl:"/youtubei/v1/browse"`), so there is
+    no known stable URL/deeplink to preselect ordinary Home chips. `content/youtube.js` now runs at
+    `document_start` (with an observer guard) to reduce the visible All→remembered-chip flash, and
+    briefly applies `html.syf-home-chip-applying` to hide the Home rich-grid contents while YouTube
+    processes the replay click. This masks the redundant-looking feed repaint, but it cannot remove
+    YouTube's underlying reload because ordinary chips are internal POST state. This is local UI replay
+    only; it does not call hidden browse APIs or change recommendations on other devices. Options page
+    has a Feed checkbox/readout/Clear button. Settings include
+    `hideShorts`, `hideRecommendedPlaylists`, `rememberHomeChip`, `rememberedHomeChip`,
     `feedbackTtlDays`, `maxCacheVideos`, `lastHistoryPaused`, `dismissedWarnings`. No current setting
     needs a page reload (all apply live).
 - **Release prep (2026-06-17 — public-release pass):** rewrote `README.md` for end users
@@ -345,7 +366,9 @@ Dev/test scripts in `scripts/`: recon-feedback, recon-undo, recon-myactivity(2),
 validate-replay, test-click, test-undo, test-toggle-log, test-native, test-toast, test-wipe-scan,
 test-wipe-ui, test-comment-search, test-comment-cache, **test-recommended-playlists** (READ-ONLY:
 temporarily toggles the local setting and validates Home + Watch-sidebar playlist hiding while
-restoring settings), debug-ma, diag, **release-shots** (release
+restoring settings), **test-home-chip-memory** (READ-ONLY/account-neutral: temporarily toggles local
+settings, clicks a Home topic chip, validates remembered auto-selection after reload, then restores
+settings), debug-ma, diag, **release-shots** (release
 validation: regenerates the README comment-search screenshots + checks both 2026-06-17 security
 fixes — dynamic iframe rule via DNR state, and isolated-world feedback apply/undo), **recon-i18n**
 (READ-ONLY i18n validation: renders /feed/history + My Activity in ja/fr/de/es/ko via the
