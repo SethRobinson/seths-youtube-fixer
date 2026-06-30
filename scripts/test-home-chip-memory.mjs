@@ -44,6 +44,16 @@ async function waitForSelected(page, label, timeoutMs = 15_000) {
   throw new Error(`Timed out waiting for selected chip ${JSON.stringify(label)}; last=${JSON.stringify(await chipSnapshot(page))}`);
 }
 
+async function waitForHomeChipMaskClear(page, timeoutMs = 2500) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const applying = await page.evaluate(() => document.documentElement.classList.contains('syf-home-chip-applying'));
+    if (!applying) return true;
+    await wait(100);
+  }
+  throw new Error('Timed out waiting for Home chip applying mask to clear');
+}
+
 async function waitForRemembered(extPage, label, timeoutMs = 8_000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
@@ -112,6 +122,7 @@ try {
   await coldHome.goto('https://www.youtube.com/', { waitUntil: 'domcontentloaded' });
   await waitForHomeChips(coldHome);
   const coldStart = await waitForSelected(coldHome, target.label);
+  await waitForHomeChipMaskClear(coldHome);
   await coldHome.close();
 
   const reloadHome = await context.newPage();
@@ -120,8 +131,10 @@ try {
   await reloadHome.reload({ waitUntil: 'domcontentloaded' });
   await waitForHomeChips(reloadHome);
   await waitForSelected(reloadHome, target.label);
+  await waitForHomeChipMaskClear(reloadHome);
   await wait(3000);
   const afterReload = await waitForSelected(reloadHome, target.label);
+  await waitForHomeChipMaskClear(reloadHome);
 
   const beforeToggleOff = await chipSnapshot(reloadHome);
   const selectedTarget = beforeToggleOff.chips.find((c) => c.label === target.label);
@@ -147,6 +160,7 @@ try {
         remembered: saved.rememberedHomeChip,
         coldStart: coldStart.selected,
         afterReload: afterReload.selected,
+        maskClearedAfterSelection: true,
         cleared: !cleared.rememberedHomeChip,
         afterToggleOff: afterToggleOff.selected,
         afterClearReload: afterClearReload.selected,

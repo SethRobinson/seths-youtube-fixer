@@ -13,7 +13,15 @@ import {
 const TAG = '[SYF]';
 const BAR_ID = 'syf-bar';
 const HOME_CHIP_SELECTOR =
-  'ytd-feed-filter-chip-bar-renderer yt-chip-cloud-chip-renderer[chip-style="STYLE_HOME_FILTER"]';
+  'ytd-feed-filter-chip-bar-renderer yt-chip-cloud-chip-renderer[chip-style="STYLE_HOME_FILTER"], ' +
+  'ytd-feed-filter-chip-bar-renderer yt-chip-cloud-chip-renderer';
+const HOME_CHIP_RETRY_MS = 12_000;
+const HOME_CHIP_RETRY_DELAY_MS = 300;
+const HOME_CHIP_CLICK_DEBOUNCE_MS = 1_500;
+const HOME_CHIP_READY_GRACE_MS = 2_000;
+const HOME_CHIP_POST_SELECT_MONITOR_MS = 4_000;
+const HOME_CHIP_REVEAL_DELAY_MS = 120;
+const HOME_CHIP_MASK_MAX_MS = 1_200;
 
 const NAH_TIP = 'Send YouTube’s real “Not interested” for this video.';
 const HATE_TIP = 'Send YouTube’s real “Don’t recommend channel” for this creator.';
@@ -205,9 +213,11 @@ function showToast(message: string): void {
 let autoSelectingHomeChip = false;
 let homeChipTimer: ReturnType<typeof setTimeout> | null = null;
 let homeChipRetryUntil = 0;
+let homeChipRetryStartedAt = 0;
 let lastHomeChipAutoKey = '';
 let lastHomeChipAutoAt = 0;
 let homeChipRevealTimer: ReturnType<typeof setTimeout> | null = null;
+let homeChipMaskTimer: ReturnType<typeof setTimeout> | null = null;
 
 function isHomePage(): boolean {
   return location.pathname === '/';
@@ -226,12 +236,54 @@ function chipLabel(chip: HTMLElement): string {
 }
 
 function isChipSelected(chip: HTMLElement): boolean {
-  return chip.hasAttribute('selected') || chip.classList.contains('iron-selected');
+  const button = chip.querySelector<HTMLElement>('button[aria-selected], button[aria-pressed]');
+  return (
+    chip.hasAttribute('selected') ||
+    chip.classList.contains('iron-selected') ||
+    chip.getAttribute('aria-selected') === 'true' ||
+    button?.getAttribute('aria-selected') === 'true' ||
+    button?.getAttribute('aria-pressed') === 'true'
+  );
 }
 
 function isAllChip(chip: HTMLElement, chips = homeChips()): boolean {
+  return chipLabel(chip).toLowerCase() === 'all' || chips[0] === chip;
+}
+
+function chipClickTarget(chip: HTMLElement): HTMLElement {
+  return chip.querySelector<HTMLElement>('chip-shape button, button, a') || chip;
+}
+
+function chipHasData(chip: HTMLElement): boolean {
   const data = (chip as any).data;
-  return chipLabel(chip).toLowerCase() === 'all' || (chips[0] === chip && !data?.navigationEndpoint);
+  return !!data && (typeof data !== 'object' || Object.keys(data).length > 0);
+}
+
+function isVisibleChip(chip: HTMLElement): boolean {
+  const rect = chip.getBoundingClientRect();
+  return chip.isConnected && rect.width > 4 && rect.height > 4;
+}
+
+function isHomeChipReady(chip: HTMLElement, chips: HTMLElement[]): boolean {
+  if (!isVisibleChip(chip)) return false;
+  const clickTarget = chipClickTarget(chip);
+  if ((clickTarget as HTMLButtonElement).disabled || clickTarget.getAttribute('aria-disabled') === 'true') return false;
+  if (isAllChip(chip, chips)) return true;
+
+  // On current YouTube the Polymer data lands shortly after the chip node. Wait
+  // briefly so the replay click hits a hydrated chip, then fall back to the DOM
+  // click path for compatibility if YouTube stops exposing that expando.
+  return chipHasData(chip) || Date.now() - homeChipRetryStartedAt >= HOME_CHIP_READY_GRACE_MS;
+}
+
+function homeGridHasVisibleItems(): boolean {
+  const contents = document.querySelector<HTMLElement>("ytd-browse[page-subtype='home'] ytd-rich-grid-renderer #contents");
+  if (!contents) return false;
+  return Array.from(contents.children).some((child) => {
+    const el = child as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 20 && rect.height > 20;
+  });
 }
 
 function rememberedHomeChipMatchesAccount(): boolean {
@@ -249,18 +301,29 @@ function setHomeChipApplying(on: boolean, revealDelay = 0): void {
     homeChipRevealTimer = null;
   }
   if (!on) {
+    if (homeChipMaskTimer) {
+      clearTimeout(homeChipMaskTimer);
+      homeChipMaskTimer = null;
+    }
+    if (!document.documentElement.classList.contains('syf-home-chip-applying')) return;
     homeChipRevealTimer = setTimeout(() => {
       homeChipRevealTimer = null;
       document.documentElement.classList.remove('syf-home-chip-applying');
     }, revealDelay);
     return;
   }
+  if (document.documentElement.classList.contains('syf-home-chip-applying')) return;
   document.documentElement.classList.add('syf-home-chip-applying');
+  homeChipMaskTimer = setTimeout(() => {
+    homeChipMaskTimer = null;
+    setHomeChipApplying(false);
+  }, HOME_CHIP_MASK_MAX_MS);
 }
 
 function scheduleHomeChipMemory(delay = 0, extendWindow = true): void {
   if (!isHomePage()) {
     homeChipRetryUntil = 0;
+    homeChipRetryStartedAt = 0;
     setHomeChipApplying(false);
     if (homeChipTimer) {
       clearTimeout(homeChipTimer);
@@ -268,55 +331,74 @@ function scheduleHomeChipMemory(delay = 0, extendWindow = true): void {
     }
     return;
   }
-  if (extendWindow) homeChipRetryUntil = Math.max(homeChipRetryUntil, Date.now() + 15_000);
+  if (extendWindow) {
+    const now = Date.now();
+    if (!homeChipRetryStartedAt || now > homeChipRetryUntil) homeChipRetryStartedAt = now;
+    homeChipRetryUntil = Math.max(homeChipRetryUntil, now + HOME_CHIP_RETRY_MS);
+  }
   if (homeChipTimer) return;
   homeChipTimer = setTimeout(() => {
     homeChipTimer = null;
     const done = ensureHomeChipMemory();
-    if (!done && Date.now() < homeChipRetryUntil) scheduleHomeChipMemory(500, false);
+    if (!done && Date.now() < homeChipRetryUntil) scheduleHomeChipMemory(HOME_CHIP_RETRY_DELAY_MS, false);
   }, delay);
 }
 
 function ensureHomeChipMemory(): boolean {
   if (!isHomePage()) return true;
+  const now = Date.now();
   const saved = settings.rememberedHomeChip;
   const wanted = normalizeChipLabel(saved?.label);
   if (settings.rememberHomeChip === false || !wanted || !rememberedHomeChipMatchesAccount()) {
+    homeChipRetryStartedAt = 0;
     setHomeChipApplying(false);
     return true;
   }
 
   const chips = homeChips();
-  if (!chips.length) return false;
+  if (!chips.length) {
+    setHomeChipApplying(false);
+    return false;
+  }
   const selected = chips.find(isChipSelected);
   const selectedLabel = selected ? chipLabel(selected) : '';
+  const key = `${wanted}\n${saved?.updatedAt ?? 0}\n${location.href}`;
   if (selectedLabel === wanted) {
-    setHomeChipApplying(false, 700);
-    return Date.now() >= homeChipRetryUntil;
+    setHomeChipApplying(false, HOME_CHIP_REVEAL_DELAY_MS);
+    const justClickedThisChip = lastHomeChipAutoKey === key && now - lastHomeChipAutoAt < HOME_CHIP_POST_SELECT_MONITOR_MS;
+    if (!justClickedThisChip) homeChipRetryStartedAt = 0;
+    return !justClickedThisChip;
   }
 
   // Respect any non-All chip that YouTube or the user has already selected. The
   // common refresh/default case is "All", which is the only state we override.
   if (selected && !isAllChip(selected, chips)) {
+    homeChipRetryStartedAt = 0;
     setHomeChipApplying(false);
     return true;
   }
 
   const target = chips.find((chip) => chipLabel(chip) === wanted);
   if (!target) {
-    if (Date.now() >= homeChipRetryUntil) setHomeChipApplying(false);
+    if (now >= homeChipRetryUntil) {
+      homeChipRetryStartedAt = 0;
+      setHomeChipApplying(false);
+    }
     return false;
   }
 
-  const key = `${wanted}\n${saved?.updatedAt ?? 0}\n${location.href}`;
-  const now = Date.now();
-  if (lastHomeChipAutoKey === key && now - lastHomeChipAutoAt < 1500) return false;
+  if (!isHomeChipReady(target, chips)) {
+    setHomeChipApplying(false);
+    return false;
+  }
+
+  if (lastHomeChipAutoKey === key && now - lastHomeChipAutoAt < HOME_CHIP_CLICK_DEBOUNCE_MS) return false;
   lastHomeChipAutoKey = key;
   lastHomeChipAutoAt = now;
 
-  const clickTarget = target.querySelector<HTMLElement>('chip-shape button, button, a') || target;
+  const clickTarget = chipClickTarget(target);
   autoSelectingHomeChip = true;
-  setHomeChipApplying(true);
+  if (homeGridHasVisibleItems()) setHomeChipApplying(true);
   target.scrollIntoView({ block: 'nearest', inline: 'center' });
   clickTarget.click();
   setTimeout(() => {
@@ -354,7 +436,7 @@ function showHomeChipToast(message: string, chip: HTMLElement): void {
 function clickAllHomeChip(chips = homeChips()): void {
   const allChip = chips.find((chip) => isAllChip(chip, chips));
   if (!allChip || isChipSelected(allChip)) return;
-  const clickTarget = allChip.querySelector<HTMLElement>('chip-shape button, button, a') || allChip;
+  const clickTarget = chipClickTarget(allChip);
   autoSelectingHomeChip = true;
   clickTarget.click();
   setTimeout(() => {
@@ -364,6 +446,7 @@ function clickAllHomeChip(chips = homeChips()): void {
 
 function clearRememberedHomeChip(chip: HTMLElement, selectAll = false, showToast = true): void {
   homeChipRetryUntil = 0;
+  homeChipRetryStartedAt = 0;
   setHomeChipApplying(false);
   if (homeChipTimer) {
     clearTimeout(homeChipTimer);

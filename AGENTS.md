@@ -144,15 +144,19 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     metadata) and shows an anchored toast near the chip bar. Clicking the first/All chip clears it;
     clicking the currently selected remembered non-All chip again also clears it and reselects All.
     On the next Home load, if `settings.rememberHomeChip !== false` and the label is present, the
-    content script retries for a short hydration window and replays YouTube's own chip button click
+    content script retries for a short hydration window, waits briefly for the target chip to be
+    hydrated/actionable when YouTube exposes chip data, and replays YouTube's own chip button click
     (guarded so the synthetic click doesn't re-save/show a toast), continuing to monitor briefly in
-    case YouTube flips back to All during hydration. Live probe: chip clicks keep `location.href` at
+    case YouTube flips back to All during hydration. The replay loop must not keep the Home grid
+    hidden after the target chip is selected: the `syf-home-chip-applying` mask is only used over
+    already-rendered Home grid items and has a hard short timeout. Live probe: chip clicks keep `location.href` at
     `https://www.youtube.com/`, do not push history, and use `continuationCommand` + `POST
     /youtubei/v1/browse` (`webCommandMetadata.sendPost`, `apiUrl:"/youtubei/v1/browse"`), so there is
     no known stable URL/deeplink to preselect ordinary Home chips. `content/youtube.js` now runs at
     `document_start` (with an observer guard) to reduce the visible All→remembered-chip flash, and
-    briefly applies `html.syf-home-chip-applying` to hide the Home rich-grid contents while YouTube
-    processes the replay click. This masks the redundant-looking feed repaint, but it cannot remove
+    briefly applies `html.syf-home-chip-applying` to hide existing Home rich-grid contents while YouTube
+    processes the replay click. This masks the redundant-looking feed repaint when content is already
+    present, but it cannot remove
     YouTube's underlying reload because ordinary chips are internal POST state. This is local UI replay
     only; it does not call hidden browse APIs or change recommendations on other devices. Options page
     has a Feed checkbox/readout/Clear button. Settings include
