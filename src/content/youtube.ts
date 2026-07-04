@@ -162,18 +162,22 @@ async function toggleHistory(): Promise<void> {
   b.disabled = true;
   b.dataset.state = 'loading';
   b.textContent = 'Working…';
-  const res = (await chrome.runtime.sendMessage({
-    type: 'SYF_HISTORY',
-    action: 'toggle',
-    authUser: activeAuthUser(),
-    pageId: activePageId(),
-  } as SyfMessage)) as
-    | HistoryResult
-    | undefined;
+  let res: DirectHistoryResult | undefined = await toggleHistoryFromActiveTab();
+  if (!res?.ok && !res?.attemptedSubmit) {
+    res = (await chrome.runtime.sendMessage({
+      type: 'SYF_HISTORY',
+      action: 'toggle',
+      authUser: activeAuthUser(),
+      pageId: activePageId(),
+    } as SyfMessage)) as DirectHistoryResult | undefined;
+  }
   b.disabled = false;
   b.dataset.state = 'ready';
   if (res?.ok && typeof res.paused === 'boolean') {
     settings = { ...settings, lastHistoryPaused: res.paused };
+    chrome.runtime
+      ?.sendMessage?.({ type: 'SYF_PATCH_SETTINGS', patch: { lastHistoryPaused: res.paused } } as SyfMessage)
+      .catch(() => {});
     updateHistoryButton();
     showToast(res.paused ? 'Watch history paused.' : 'Watch history resumed.');
   } else if (res?.ok) {
@@ -768,6 +772,165 @@ function replay(token: string, _mode: 'apply' | 'undo'): Promise<any> {
 }
 function replayOk(res: any): boolean {
   return !!(res?.ok && (res?.json?.feedbackResponses?.[0]?.isProcessed ?? true));
+}
+
+interface DirectHistoryResult extends HistoryResult {
+  attemptedSubmit?: boolean;
+}
+
+function historyTextOf(t: any): string {
+  try {
+    if (typeof t === 'string') return t;
+    if (t?.runs) return t.runs.map((r: any) => r.text).join('');
+    if (t?.simpleText) return t.simpleText;
+    if (typeof t?.content === 'string') return t.content;
+  } catch {
+    /* noop */
+  }
+  return '';
+}
+
+function findHistoryToggleByIcon(data: any): { token: string | null; paused: boolean | null } {
+  let token: string | null = null;
+  let paused: boolean | null = null;
+  const seen = new WeakSet<object>();
+  (function walk(o: any, d: number, icon: string) {
+    if (token || !o || typeof o !== 'object' || d > 40 || seen.has(o)) return;
+    seen.add(o);
+    if (Array.isArray(o)) {
+      for (const x of o) walk(x, d + 1, icon);
+      return;
+    }
+    const here = String(o.icon?.iconType || o.defaultIcon?.iconType || o.iconType || '').toUpperCase();
+    if (here) icon = here;
+    const ft =
+      o.feedbackEndpoint && typeof o.feedbackEndpoint.feedbackToken === 'string'
+        ? o.feedbackEndpoint.feedbackToken
+        : typeof o.feedbackToken === 'string'
+          ? o.feedbackToken
+          : null;
+    if (ft) {
+      if (/PAUSE/.test(icon)) {
+        token = ft;
+        paused = false;
+        return;
+      }
+      if (/PLAY|RESUME/.test(icon)) {
+        token = ft;
+        paused = true;
+        return;
+      }
+    }
+    for (const k of Object.keys(o)) walk(o[k], d + 1, icon);
+  })(data, 0, '');
+  return { token, paused };
+}
+
+function findHistoryToggleInData(data: any): { token: string | null; paused: boolean | null } {
+  let token: string | null = null;
+  let paused: boolean | null = null;
+  const seen = new WeakSet<object>();
+  (function walk(o: any) {
+    if (token || !o || typeof o !== 'object' || seen.has(o)) return;
+    seen.add(o);
+    if (Array.isArray(o)) {
+      for (const x of o) walk(x);
+      return;
+    }
+    const label = (historyTextOf(o.text) || historyTextOf(o.title) || historyTextOf(o.content)).trim();
+    if (/^pause watch history$/i.test(label) || /^turn on watch history$/i.test(label)) {
+      paused = /^turn on/i.test(label);
+      const s2 = new WeakSet<object>();
+      (function dig(n: any, d: number) {
+        if (token || !n || typeof n !== 'object' || d > 14 || s2.has(n)) return;
+        s2.add(n);
+        if (typeof n.feedbackToken === 'string') {
+          token = n.feedbackToken;
+          return;
+        }
+        for (const k of Object.keys(n)) dig(n[k], d + 1);
+      })(o, 0);
+    }
+    for (const k of Object.keys(o)) walk(o[k]);
+  })(data);
+  if (!token) ({ token, paused } = findHistoryToggleByIcon(data));
+  return { token, paused };
+}
+
+function jsonObjectAt(source: string, start: number): string | null {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < source.length; i++) {
+    const c = source[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (c === '\\') escape = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') inString = true;
+    else if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+function parseYtInitialData(html: string): any {
+  const scripts = Array.from(new DOMParser().parseFromString(html, 'text/html').scripts).map((s) => s.textContent || '');
+  scripts.push(html);
+  for (const script of scripts) {
+    let pos = script.indexOf('ytInitialData');
+    while (pos >= 0) {
+      const start = script.indexOf('{', pos);
+      if (start < 0) break;
+      const raw = jsonObjectAt(script, start);
+      if (raw) {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          /* keep searching */
+        }
+      }
+      pos = script.indexOf('ytInitialData', pos + 13);
+    }
+  }
+  return null;
+}
+
+function activeHistoryUrl(): string {
+  const u = new URL('/feed/history', YT_ORIGIN);
+  const authUser = activeAuthUser();
+  if (authUser) u.searchParams.set('authuser', authUser);
+  return u.href;
+}
+
+async function toggleHistoryFromActiveTab(): Promise<DirectHistoryResult> {
+  let info: { token: string | null; paused: boolean | null };
+  try {
+    const res = await fetch(activeHistoryUrl(), { credentials: 'include' });
+    if (!res.ok) return { ok: false, error: `history-fetch-${res.status}` };
+    const data = parseYtInitialData(await res.text());
+    if (!data) return { ok: false, error: 'no-history-data' };
+    info = findHistoryToggleInData(data);
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+  if (!info.token) return { ok: false, found: false, error: 'no-control' };
+
+  const res = await replay(info.token, 'apply');
+  const ok = replayOk(res);
+  const known = typeof info.paused === 'boolean' ? info.paused : undefined;
+  return {
+    ok,
+    found: true,
+    attemptedSubmit: res?.error !== 'no-config',
+    paused: ok ? (known === undefined ? undefined : !known) : known,
+    error: ok ? undefined : res?.error || 'submit-failed',
+  };
 }
 
 // --- button rendering ---

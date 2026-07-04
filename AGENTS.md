@@ -112,12 +112,17 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
   Escape, the toolbar toggle, or SPA navigation restores/cleans up appropriately.
 - **UX (2026-06-16):**
   - **⏸ Pause history / ▶ Resume history** — REAL inline toggle. Pausing/resuming watch history is
-    a `feedbackToken` on the same `/youtubei/v1/feedback` endpoint as the two feedback buttons. The bridge extracts
-    the pause/resume token + state from `/feed/history`'s `ytInitialData` (`readHistoryInfo` →
-    `HISTORY_INFO`). Bar → `SYF_HISTORY` → SW opens `/feed/history` in a bg tab → `SYF_HISTORY_DO`
-    submits via the bridge → caches `settings.lastHistoryPaused` (drives the button label). Safety:
-    if the token's gone (`no-token`), `showBackoff('history')` shows a "YouTube changed its code"
-    notice with **Don't show again** (`settings.dismissedWarnings`).
+    a `feedbackToken` on the same `/youtubei/v1/feedback` endpoint as the two feedback buttons. The
+    bar first fetches `/feed/history?authuser=N` from the active YouTube tab, parses that page's
+    `ytInitialData`, finds the pause/resume token by English label or language-independent
+    `PAUSE_*`/`PLAY_*` icon, then submits from the same active tab's isolated-world session
+    (`SAPISID` + current `ytcfg` context). This keeps the operation in the currently selected
+    YouTube/Brand-account context and avoids depending on a slow or misrouted background helper tab.
+    If the active-tab read fails before any submit attempt, it falls back to the older
+    `SYF_HISTORY` → SW background `/feed/history` tab → `SYF_HISTORY_DO` path. Successful toggles
+    patch `settings.lastHistoryPaused` (drives the button label). Safety: if the token's gone
+    (`no-control`), `showBackoff('history')` shows a "YouTube changed its code" notice with
+    **Don't show again** (`settings.dismissedWarnings`).
   - **Forget recent** — quick in-page **presets** dialog; picking a window opens the slow
     scan/review/delete in a new tab (`wipe.html?minutes=N&authuser=N`) so it doesn't block viewing.
     Tooltip/dialog copy explicitly says the exact list is reviewed before anything is deleted, and
@@ -254,13 +259,14 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
   - History button label is driven by cached `lastHistoryPaused` (default = assume ON). The *action
     and toast are always correct* (the toggle reads live state from /feed/history first), but on a
     fresh install / after toggling via YouTube's own UI the pre-click label can be stale until the
-    first toggle. A live state read on bar build would fix it but means opening /feed/history.
+    first toggle. A live state read on bar build would fix it but means fetching /feed/history.
   - History pause/resume: English labels (`pause/turn on watch history`) are the primary match;
     non-English locales identify the control by its **icon** (`PAUSE_*`/`PLAY_*`, via
-    `findHistoryToggleByIcon`) — which by construction ignores the page's DELETE-icon "clear all
-    history" token and the null-icon per-item "remove" tokens, so it can't submit a destructive wrong
-    token. Live-validated (icon token == English-label token in en/ja/fr/de/es/ko); the resume-state
-    PLAY icon wasn't exercised (history was active). If no pause/play control is found → backoff.
+    `findHistoryToggleByIcon`, mirrored in the active-tab fetch path and the page bridge fallback) —
+    which by construction ignores the page's DELETE-icon "clear all history" token and the null-icon
+    per-item "remove" tokens, so it can't submit a destructive wrong token. Live-validated (icon
+    token == English-label token in en/ja/fr/de/es/ko); the resume-state PLAY icon wasn't exercised
+    (history was active). If no pause/play control is found → backoff.
   - Settings dialog frames `options.html` from youtube.com (needed for the feature); a malicious
     youtube.com page could clickjack the one-click Undo/Redo (Reset is behind a native confirm). The
     CSP blocks non-youtube origins.
@@ -302,10 +308,12 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     `https://myactivity.google.com/b/<pageId>/product/youtube`, not bare `/product/youtube`.
     Confirmed live: bare slot 0 was stale while YouTube `/feed/history`, `myaccount .../yourdata/youtube?pageId=...`,
     and `/b/<pageId>/product/youtube` all showed today's watch history. `page-bridge.ts` now sends
-    `DELEGATED_SESSION_ID` as `pageId`; `youtube.ts` includes it in `SYF_ACCOUNT`, `SYF_HISTORY`,
-    and `SYF_OPEN_PAGE`; `wipe.html` preserves it; and `handleWipe` routes Brand-account scans/deletes
-    to `/b/<pageId>/product/youtube`. The scanner's token/timestamp DOM still matches there
-    (`data-token`/`data-date`; read-only live check found 100 rows).
+    `DELEGATED_SESSION_ID` as `pageId`; `youtube.ts` includes it in `SYF_ACCOUNT` and
+    `SYF_OPEN_PAGE`; `wipe.html` preserves it; and `handleWipe` routes Brand-account scans/deletes to
+    `/b/<pageId>/product/youtube`. Pause/resume history does **not** route YouTube `/feed/history`
+    through `/b/` or a `pageId` query; it uses the active YouTube session (`authuser` slot plus the
+    selected channel context already present in the tab). The scanner's token/timestamp DOM still
+    matches there (`data-token`/`data-date`; read-only live check found 100 rows).
   - Caveat: timestamps are minute-precision, assumed "today" (yesterday if the time is in the
     future). Deletion re-scans after each click (DOM mutates).
   - Adapter A (UI click) is dead: the confirm "Delete" is a Material Web button (`VfPpkd-LgbsSe`)

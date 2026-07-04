@@ -326,10 +326,11 @@ async function resolveAccountRoute(authUser?: string, pageId?: string): Promise<
 }
 
 function accountUrl(url: string, authUser: string, pageId = ''): string {
-  const base = pageId && url === MA_URL ? `https://myactivity.google.com/b/${pageId}/product/youtube` : url;
+  const isMyActivity = url === MA_URL;
+  const base = pageId && isMyActivity ? `https://myactivity.google.com/b/${pageId}/product/youtube` : url;
   const u = new URL(base);
   if (authUser) u.searchParams.set('authuser', authUser);
-  if (pageId) u.searchParams.set('pageId', pageId);
+  if (pageId && isMyActivity) u.searchParams.set('pageId', pageId);
   return u.href;
 }
 

@@ -159,8 +159,8 @@ export const QUOTA_KEY = 'syf.quota';
 
 // The active YouTube account's opaque identity fingerprint (from ytcfg DATASYNC_ID), account slot
 // (`authuser`), and optional Brand-account page id. The fingerprint is used to detect account
-// changes and clear account-specific feedback tokens/logs; authuser/pageId route YouTube/My
-// Activity helper tabs to the account/channel the user is actually viewing. None are credentials.
+// changes and clear account-specific feedback tokens/logs; authuser routes the Google account slot,
+// while pageId routes Brand-account My Activity pages. None are credentials.
 export const ACCOUNT_KEY = 'syf.account';
 
 export interface RememberedHomeChip {
