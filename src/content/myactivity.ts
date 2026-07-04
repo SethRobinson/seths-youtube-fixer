@@ -152,7 +152,7 @@ function collect(): ScannedItem[] {
 function inWindow(items: ScannedItem[], startMs: number, endMs: number): ScannedItem[] {
   return items.filter((i) => i.ms != null && i.ms >= startMs && i.ms <= endMs);
 }
-const toWire = (i: ScannedItem) => ({ title: i.title, timeText: i.timeText ?? '', ms: i.ms ?? 0 });
+const toWire = (i: ScannedItem) => ({ title: i.title, timeText: i.timeText ?? '', ms: i.ms ?? 0, token: i.token ?? undefined });
 
 // Pull at / f.sid / bl out of the inline WIZ_global_data script.
 function wizParam(name: string): string | null {
@@ -164,6 +164,17 @@ function wizParam(name: string): string | null {
     }
   }
   return null;
+}
+
+function wizParams(): { at: string; fsid: string; bl: string } | null {
+  const at = wizParam('SNlM0e');
+  const fsid = wizParam('FdrFJe');
+  const bl = wizParam('cfb2h');
+  if (!at || !fsid || !bl) {
+    console.warn('[SYF] missing WIZ params; cannot delete', { at: !!at, fsid: !!fsid, bl: !!bl });
+    return null;
+  }
+  return { at, fsid, bl };
 }
 
 async function rpcDelete(token: string, at: string, fsid: string, bl: string): Promise<boolean> {
@@ -191,20 +202,20 @@ async function rpcDelete(token: string, at: string, fsid: string, bl: string): P
     });
     if (!res.ok) return false;
     const text = await res.text();
-    return text.includes(DELETE_RPC);
+    return rpcSucceeded(text);
   } catch {
     return false;
   }
 }
 
+function rpcSucceeded(text: string): boolean {
+  const rpcRow = `"wrb.fr","${DELETE_RPC}"`;
+  return text.includes(rpcRow) && !text.includes(`${rpcRow},null,null,null,[`);
+}
+
 async function deleteInWindow(startMs: number, endMs: number): Promise<number> {
-  const at = wizParam('SNlM0e');
-  const fsid = wizParam('FdrFJe');
-  const bl = wizParam('cfb2h');
-  if (!at || !fsid || !bl) {
-    console.warn('[SYF] missing WIZ params; cannot delete', { at: !!at, fsid: !!fsid, bl: !!bl });
-    return 0;
-  }
+  const wiz = wizParams();
+  if (!wiz) return 0;
   // Collect tokens up front (the DOM doesn't auto-remove deleted rows).
   const items = inWindow(collect(), startMs, endMs).filter((i) => i.token);
   const seen = new Set<string>();
@@ -212,7 +223,7 @@ async function deleteInWindow(startMs: number, endMs: number): Promise<number> {
   for (const it of items) {
     if (seen.has(it.token!)) continue;
     seen.add(it.token!);
-    if (await rpcDelete(it.token!, at, fsid, bl)) deleted++;
+    if (await rpcDelete(it.token!, wiz.at, wiz.fsid, wiz.bl)) deleted++;
     await wait(160);
   }
   return deleted;

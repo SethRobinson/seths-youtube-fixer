@@ -282,9 +282,12 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     AM/PM, 24-hour (fr/de/es/ja), and Korean 오전/오후 (`timeTextOf`/`parseTimeOfDay`); time-text
     inside the thumbnail `<a>` is skipped so the video DURATION badge (also "\d+:\d+") can't shadow
     the real timestamp. (Live-validated en/ja/fr/de/es/ko — see the i18n audit above.)
-    SW (`handleWipe`) opens a fresh background My Activity tab, relays `SYF_MA_SCAN`/
-    `SYF_MA_DELETE`, then closes the tab. Watch-page dialog: presets (15/30/60/120 + custom) →
-    **scan → review the exact item list + window times → red Delete** (gated). Scan verified
+    SW (`handleWipe`) opens a fresh background My Activity tab for window scan/bulk delete and
+    relays `SYF_MA_SCAN`/`SYF_MA_DELETE`, then closes the tab. Watch-page dialog: presets
+    (15/30/60/120 + custom) → **scan → review the exact item list + window times → red Delete**
+    (gated). Each reviewed row also has a trash icon shortcut that deletes that one scanned
+    `data-token` only via a direct service-worker My Activity RPC (no helper tab opened) and removes
+    the row from the review list. Scan verified
     (`test-wipe-scan`, `test-wipe-ui`). **The real RPC delete is now validated end-to-end** on a
     Japanese (`?hl=ja`) page via `test-wipe-delete-ja.mjs`: a single-item ±30s window (hard-gated to
     exactly one item), `deleted=1`, and the item was gone from its window after reload (total 67→66).
@@ -500,6 +503,9 @@ Instead:
 - A dedicated **`.test-profile/`** (gitignored) has `dist/` loaded ONCE via the
   chrome://extensions "Load unpacked" UI. It persists and auto-reloads from `dist/` every
   launch, and also holds Seth's signed-in YouTube session.
+- A secondary Chrome profile named **Dalen** is available for destructive validation such as
+  My Activity single-item delete tests. Prefer Dalen over Seth's main session for real-delete
+  testing when feasible; do not put login details or profile secrets in this file.
 - `scripts/chrome-lib.mjs` `ensureChrome()` spawns real Chrome with that profile +
   `--remote-debugging-port=9222`; tests/scripts attach via `chromium.connectOverCDP`.
 - Reload-after-rebuild calls `chrome.runtime.reload()` in the service worker (MV3 SW

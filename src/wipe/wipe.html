@@ -31,11 +31,41 @@
       .btn:hover { background: #3f3f3f; }
       .custom input { width: 80px; padding: 7px; border-radius: 8px; border: 1px solid #555; background: transparent; color: inherit; }
       .list { max-height: 50vh; overflow-y: auto; margin: 12px 0; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; }
-      .item { font-size: 13px; padding: 8px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .t { display: inline-block; min-width: 64px; opacity: 0.6; font-variant-numeric: tabular-nums; }
+      .item {
+        display: grid;
+        grid-template-columns: 74px minmax(0, 1fr) 34px;
+        gap: 10px;
+        align-items: center;
+        font-size: 13px;
+        min-height: 38px;
+        padding: 5px 8px 5px 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .item.deleting { opacity: 0.55; }
+      .item-title { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .t { opacity: 0.6; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .item-delete {
+        width: 30px;
+        height: 30px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: #aaa;
+        cursor: pointer;
+      }
+      .item-delete svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .item-delete:hover { background: #3f3f3f; color: #fff; }
+      .item-delete:disabled { opacity: 0.35; cursor: default; }
+      .item-delete:disabled:hover { background: transparent; color: #aaa; }
       .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
       .delete { background: #cc0000; border-color: #cc0000; }
       .delete:hover { background: #e02020; }
+      .status { margin: 10px 0 -2px; font-weight: 600; }
+      .status.done { color: #2ba640; }
+      .status.error { color: #ff8a80; }
       .loading, .done, .error { padding: 16px 2px; }
       .done { color: #2ba640; }
       .error { color: #ff8a80; }

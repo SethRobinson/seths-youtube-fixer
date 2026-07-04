@@ -8,6 +8,17 @@ const PARAMS = new URLSearchParams(location.search);
 const fmtTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const esc = (s: unknown) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+let deleteBusy = false;
+const TRASH_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>';
+
+interface ReviewItem {
+  title: string;
+  timeText: string;
+  ms: number;
+  token?: string;
+}
+
 const normalizeAuthUser = (v: unknown) => {
   const s = String(v ?? '').trim();
   return /^\d+$/.test(s) ? s : '';
@@ -94,10 +105,22 @@ function renderReview(startMs: number, endMs: number, res: any): void {
     withBack(`<div class="loading">No ${activityLink()} found between <b>${fmtTime(startMs)}</b> and <b>${fmtTime(endMs)}</b>.</div>`);
     return;
   }
+  renderReviewList(startMs, endMs, matched);
+}
+
+function renderReviewList(startMs: number, endMs: number, matched: ReviewItem[], statusHtml = ''): void {
+  deleteBusy = false;
   root.innerHTML = `
     <p class="note">About to delete <b>${matched.length}</b> item(s) from ${activityLink()}, <b>${fmtTime(startMs)}</b> to <b>${fmtTime(endMs)}</b>. <b>This can’t be undone.</b></p>
+    ${statusHtml}
     <div class="list">${matched
-      .map((m) => `<div class="item"><span class="t">${esc(m.timeText)}</span> ${esc((m.title || '').slice(0, 80))}</div>`)
+      .map(
+        (m, i) => `<div class="item" data-index="${i}">
+          <span class="t">${esc(m.timeText)}</span>
+          <span class="item-title" title="${esc(m.title)}">${esc((m.title || '').slice(0, 160))}</span>
+          <button class="item-delete" data-index="${i}" title="Delete this item" aria-label="Delete this item"${m.token ? '' : ' disabled'}>${TRASH_ICON}</button>
+        </div>`
+      )
       .join('')}</div>
     <div class="actions">
       <button class="btn" id="cancel">Cancel</button>
@@ -105,6 +128,13 @@ function renderReview(startMs: number, endMs: number, res: any): void {
     </div>`;
   root.querySelector('#cancel')!.addEventListener('click', renderPick);
   root.querySelector('#del')!.addEventListener('click', () => void doDelete(startMs, endMs, matched.length));
+  root.querySelectorAll('.item-delete').forEach((b) =>
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void doDeleteOne(startMs, endMs, matched, Number((b as HTMLElement).dataset.index));
+    })
+  );
 }
 
 async function doDelete(startMs: number, endMs: number, count: number): Promise<void> {
@@ -127,6 +157,49 @@ async function doDelete(startMs: number, endMs: number, count: number): Promise<
     withBack(`<div class="done">✓ Deleted ${res.deleted ?? 0} item(s) from ${activityLink()}, ${fmtTime(startMs)} to ${fmtTime(endMs)}.</div>`);
   } else {
     withBack(`<div class="error">Delete failed: ${esc(res?.error || 'unknown')}.</div>`);
+  }
+}
+
+async function doDeleteOne(startMs: number, endMs: number, matched: ReviewItem[], index: number): Promise<void> {
+  if (deleteBusy) return;
+  const item = matched[index];
+  const token = String(item?.token || '').trim();
+  if (!item || !token) {
+    renderReviewList(startMs, endMs, matched, '<div class="status error">Delete failed: no delete token found for that item.</div>');
+    return;
+  }
+
+  deleteBusy = true;
+  root.querySelectorAll<HTMLButtonElement>('.item-delete, #del, #cancel').forEach((button) => {
+    button.disabled = true;
+  });
+  const btn = root.querySelector(`.item-delete[data-index="${index}"]`) as HTMLButtonElement | null;
+  const row = btn?.closest('.item') as HTMLElement | null;
+  row?.classList.add('deleting');
+
+  let res: any;
+  try {
+    res = await chrome.runtime.sendMessage({
+      type: 'SYF_WIPE',
+      mode: 'delete-token',
+      token,
+      authUser: AUTH_USER,
+      pageId: PAGE_ID,
+    } as SyfMessage);
+  } catch {
+    renderReviewList(startMs, endMs, matched, `<div class="status error">${contextInvalidatedMessage()}</div>`);
+    return;
+  }
+
+  if (res?.ok && (res.deleted ?? 0) > 0) {
+    const remaining = matched.filter((_, i) => i !== index);
+    if (!remaining.length) {
+      withBack(`<div class="done">✓ Deleted 1 item from ${activityLink()}.</div>`);
+      return;
+    }
+    renderReviewList(startMs, endMs, remaining, `<div class="status done">Deleted 1 item. ${remaining.length} item(s) remain.</div>`);
+  } else {
+    renderReviewList(startMs, endMs, matched, `<div class="status error">Delete failed: ${esc(res?.error || 'unknown')}.</div>`);
   }
 }
 

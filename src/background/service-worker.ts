@@ -281,6 +281,7 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const MA_URL = 'https://myactivity.google.com/product/youtube';
 const HISTORY_URL = 'https://www.youtube.com/feed/history';
+const MA_DELETE_RPC = 'TmdDAd';
 
 interface StoredAccount {
   id: string;
@@ -357,20 +358,86 @@ async function sendToTab(tabId: number, message: SyfMessage, tries = 8): Promise
   throw new Error('My Activity content script did not respond');
 }
 
-async function handleWipe(mode: 'scan' | 'delete', startMs: number, endMs: number, authUser?: string, pageId?: string): Promise<any> {
-  let tabId: number | undefined;
+type WipeRequest = Extract<SyfMessage, { type: 'SYF_WIPE' }>;
+
+function wizParamFromHtml(html: string, name: string): string {
+  return html.match(new RegExp('"' + name + '":"([^"]+)"'))?.[1] || '';
+}
+
+function maDeleteRpcSucceeded(text: string): boolean {
+  const rpcRow = `"wrb.fr","${MA_DELETE_RPC}"`;
+  return text.includes(rpcRow) && !text.includes(`${rpcRow},null,null,null,[`);
+}
+
+async function directDeleteMyActivityToken(token: string, authUser?: string, pageId?: string): Promise<any> {
+  const clean = String(token || '').trim();
+  if (!clean) return { ok: false, mode: 'delete-token', matched: [], deleted: 0, error: 'missing token' };
   try {
     const route = await resolveAccountRoute(authUser, pageId);
-    // Fresh tab so our content script is active. Delete runs focused (active) —
-    // My Activity's confirm dialog is unreliable in a background tab.
-    const tab = await chrome.tabs.create({ url: accountUrl(MA_URL, route.authUser, route.pageId), active: mode === 'delete' });
+    const pageUrl = accountUrl(MA_URL, route.authUser, route.pageId);
+    const htmlRes = await fetch(pageUrl, { credentials: 'include' });
+    if (!htmlRes.ok) {
+      return { ok: false, mode: 'delete-token', matched: [], deleted: 0, error: `My Activity returned ${htmlRes.status}` };
+    }
+    const html = await htmlRes.text();
+    const at = wizParamFromHtml(html, 'SNlM0e');
+    const fsid = wizParamFromHtml(html, 'FdrFJe');
+    const bl = wizParamFromHtml(html, 'cfb2h');
+    if (!at || !fsid || !bl) {
+      return { ok: false, mode: 'delete-token', matched: [], deleted: 0, error: 'missing My Activity delete parameters' };
+    }
+
+    const sourcePath = new URL(pageUrl).pathname;
+    const params = new URLSearchParams({
+      rpcids: MA_DELETE_RPC,
+      'source-path': sourcePath,
+      'f.sid': fsid,
+      bl,
+      hl: 'en',
+      'soc-app': '712',
+      'soc-platform': '1',
+      'soc-device': '1',
+      _reqid: String(Math.floor(Math.random() * 1_000_000)),
+      rt: 'c',
+    });
+    const inner = JSON.stringify([[null, ['youtube']], [clean]]);
+    const freq = JSON.stringify([[[MA_DELETE_RPC, inner, null, 'generic']]]);
+    const res = await fetch(`https://myactivity.google.com/_/FootprintsMyactivityUi/data/batchexecute?${params}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: `f.req=${encodeURIComponent(freq)}&at=${encodeURIComponent(at)}&`,
+    });
+    const text = await res.text().catch(() => '');
+    if (!res.ok || !maDeleteRpcSucceeded(text)) {
+      return { ok: false, mode: 'delete-token', matched: [], deleted: 0, error: 'My Activity rejected the delete' };
+    }
+    return { ok: true, mode: 'delete-token', matched: [], deleted: 1 };
+  } catch (e) {
+    return { ok: false, mode: 'delete-token', matched: [], deleted: 0, error: String(e) };
+  }
+}
+
+async function handleWipe(msg: WipeRequest): Promise<any> {
+  const mode = msg.mode;
+  if (msg.mode === 'delete-token') return directDeleteMyActivityToken(msg.token, msg.authUser, msg.pageId);
+  let tabId: number | undefined;
+  try {
+    const route = await resolveAccountRoute(msg.authUser, msg.pageId);
+    // Fresh inactive tab so our My Activity content script has the signed-in origin
+    // context it needs. RPC deletes do not need a focused tab.
+    const tab = await chrome.tabs.create({ url: accountUrl(MA_URL, route.authUser, route.pageId), active: false });
     tabId = tab.id!;
     await waitTabComplete(tabId);
     await delay(5000); // let the SPA render the activity list
-    const maMsg: SyfMessage =
-      mode === 'scan'
-        ? { type: 'SYF_MA_SCAN', startMs, endMs }
-        : { type: 'SYF_MA_DELETE', startMs, endMs };
+    let maMsg: SyfMessage;
+    if (msg.mode === 'scan') {
+      maMsg = { type: 'SYF_MA_SCAN', startMs: msg.startMs, endMs: msg.endMs };
+    } else if (msg.mode === 'delete') {
+      maMsg = { type: 'SYF_MA_DELETE', startMs: msg.startMs, endMs: msg.endMs };
+    } else {
+      return { ok: false, mode, matched: [], error: 'unknown wipe mode' };
+    }
     const res = await sendToTab(tabId, maMsg);
     return res ?? { ok: false, mode, matched: [], error: 'no response' };
   } catch (e) {
@@ -609,7 +676,7 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       return true;
 
     case 'SYF_WIPE':
-      handleWipe(msg.mode, msg.startMs, msg.endMs, msg.authUser, msg.pageId).then(sendResponse);
+      handleWipe(msg).then(sendResponse);
       return true;
 
     case 'SYF_OPEN_OPTIONS':

@@ -26,7 +26,9 @@ export type SyfMessage =
       match?: { type: FeedbackType; videoId?: string; channelId?: string };
     }
   | { type: 'SYF_GET_LOG' }
-  | { type: 'SYF_WIPE'; mode: 'scan' | 'delete'; startMs: number; endMs: number; authUser?: string; pageId?: string }
+  | { type: 'SYF_WIPE'; mode: 'scan'; startMs: number; endMs: number; authUser?: string; pageId?: string }
+  | { type: 'SYF_WIPE'; mode: 'delete'; startMs: number; endMs: number; authUser?: string; pageId?: string }
+  | { type: 'SYF_WIPE'; mode: 'delete-token'; token: string; authUser?: string; pageId?: string }
   | { type: 'SYF_MA_SCAN'; startMs: number; endMs: number }
   | { type: 'SYF_MA_DELETE'; startMs: number; endMs: number }
   | { type: 'SYF_OPEN_OPTIONS' }
@@ -62,11 +64,12 @@ export interface WipeItem {
   title: string;
   timeText: string;
   ms: number;
+  token?: string;
 }
 
 export interface WipeResult {
   ok: boolean;
-  mode: 'scan' | 'delete';
+  mode: 'scan' | 'delete' | 'delete-token';
   matched: WipeItem[];
   deleted?: number;
   error?: string;
