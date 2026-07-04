@@ -40,6 +40,8 @@ interface BtnDef {
   action: string;
   label: string;
   tip: string;
+  ariaLabel?: string;
+  icon?: 'thumbnail';
 }
 
 const BUTTONS: BtnDef[] = [
@@ -52,6 +54,13 @@ const BUTTONS: BtnDef[] = [
     tip: 'Forget recent YouTube activity via My Activity. You’ll review the exact list before anything is deleted.',
   },
   { action: 'find-comments', label: 'Find in comments', tip: 'Search all public comments and replies.' },
+  {
+    action: 'thumbnail',
+    label: '',
+    tip: 'Show the original thumbnail over the video.',
+    ariaLabel: 'Show thumbnail',
+    icon: 'thumbnail',
+  },
   { action: 'info', label: 'ℹ Info', tip: 'Seth’s YouTube Fixer — settings, feedback log & undo.' },
 ];
 
@@ -70,6 +79,11 @@ const state: Record<string, ActionState> = { nah: {}, 'hate-channel': {} };
 let current: { videoId?: string; channelId?: string; channelName?: string; title?: string } = {};
 let settings: SyfSettings = { ...DEFAULT_SETTINGS };
 let historyInfo: { token?: string | null; paused?: boolean | null; found?: boolean } = {};
+let thumbnailOverlay: HTMLElement | null = null;
+let thumbnailHost: HTMLElement | null = null;
+let thumbnailVideo: HTMLVideoElement | null = null;
+let thumbnailWasPlaying = false;
+let thumbnailKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
 function applySettings(s: SyfSettings): void {
   settings = s;
@@ -203,6 +217,138 @@ function showToast(message: string): void {
     t.classList.remove('syf-toast-show');
     setTimeout(() => t.remove(), 250);
   }, 6500);
+}
+
+function thumbnailUrls(videoId: string): string[] {
+  const id = encodeURIComponent(videoId);
+  return [
+    `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
+    `https://i.ytimg.com/vi/${id}/sddefault.jpg`,
+    `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+    `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
+  ];
+}
+
+function findPlayerHost(): HTMLElement | null {
+  return (
+    document.querySelector<HTMLElement>('#movie_player') ||
+    document.querySelector<HTMLElement>('#player-container-inner') ||
+    document.querySelector<HTMLElement>('#player')
+  );
+}
+
+function updateThumbnailButton(): void {
+  const btn = buttons.thumbnail;
+  if (!btn) return;
+  btn.dataset.state = thumbnailOverlay ? 'active' : 'ready';
+  btn.title = thumbnailOverlay ? 'Hide thumbnail.' : 'Show the original thumbnail over the video.';
+  btn.setAttribute('aria-label', thumbnailOverlay ? 'Hide thumbnail' : 'Show thumbnail');
+}
+
+function closeThumbnailOverlay(resumePlayback = true): void {
+  thumbnailOverlay?.remove();
+  thumbnailOverlay = null;
+  thumbnailHost?.classList.remove('syf-thumbnail-host');
+  thumbnailHost = null;
+  if (thumbnailKeyHandler) {
+    document.removeEventListener('keydown', thumbnailKeyHandler, true);
+    thumbnailKeyHandler = null;
+  }
+  if (resumePlayback && thumbnailWasPlaying && thumbnailVideo?.isConnected) {
+    thumbnailVideo.play().catch(() => {});
+  }
+  thumbnailVideo = null;
+  thumbnailWasPlaying = false;
+  updateThumbnailButton();
+}
+
+function showThumbnailUnavailable(overlay: HTMLElement): void {
+  overlay.querySelector<HTMLImageElement>('.syf-thumbnail-img')?.remove();
+  if (overlay.querySelector('.syf-thumbnail-fallback')) return;
+  const fallback = document.createElement('div');
+  fallback.className = 'syf-thumbnail-fallback';
+  fallback.textContent = 'Thumbnail unavailable';
+  overlay.appendChild(fallback);
+}
+
+function showThumbnailOverlay(): void {
+  const videoId = current.videoId || getVideoId();
+  if (!videoId) {
+    showToast('No current YouTube video found.');
+    return;
+  }
+  const host = findPlayerHost();
+  if (!host) {
+    showToast('The video player is not ready yet.');
+    return;
+  }
+
+  closeThumbnailOverlay(false);
+  thumbnailHost = host;
+  thumbnailHost.classList.add('syf-thumbnail-host');
+
+  const overlay = document.createElement('div');
+  overlay.id = 'syf-thumbnail-overlay';
+  overlay.className = 'syf-thumbnail-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-label', 'Video thumbnail');
+  overlay.tabIndex = -1;
+
+  const img = document.createElement('img');
+  img.className = 'syf-thumbnail-img';
+  img.alt = current.title ? `Thumbnail for ${current.title}` : 'Video thumbnail';
+  const urls = thumbnailUrls(videoId);
+  let urlIndex = 0;
+  const useNextUrl = () => {
+    urlIndex += 1;
+    if (urlIndex < urls.length) {
+      img.src = urls[urlIndex];
+    } else {
+      showThumbnailUnavailable(overlay);
+    }
+  };
+  img.addEventListener('error', useNextUrl);
+  img.addEventListener('load', () => {
+    // Missing max-res thumbnails can come back as tiny placeholder art. Prefer
+    // the next real size instead of showing the placeholder as "the thumbnail."
+    if (urlIndex < 2 && img.naturalWidth <= 160 && img.naturalHeight <= 120) useNextUrl();
+  });
+  img.src = urls[urlIndex];
+
+  const close = document.createElement('button');
+  close.className = 'syf-thumbnail-close';
+  close.type = 'button';
+  close.title = 'Close thumbnail';
+  close.setAttribute('aria-label', 'Close thumbnail');
+  close.textContent = '✕';
+  close.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeThumbnailOverlay();
+  });
+
+  overlay.append(img, close);
+  host.appendChild(overlay);
+  thumbnailOverlay = overlay;
+
+  thumbnailVideo = host.querySelector<HTMLVideoElement>('video') || document.querySelector<HTMLVideoElement>('video.html5-main-video');
+  thumbnailWasPlaying = !!thumbnailVideo && !thumbnailVideo.paused && !thumbnailVideo.ended;
+  if (thumbnailWasPlaying) thumbnailVideo?.pause();
+
+  thumbnailKeyHandler = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape' || !thumbnailOverlay) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeThumbnailOverlay();
+  };
+  document.addEventListener('keydown', thumbnailKeyHandler, true);
+  updateThumbnailButton();
+  requestAnimationFrame(() => close.focus());
+}
+
+function toggleThumbnailOverlay(): void {
+  if (thumbnailOverlay) closeThumbnailOverlay();
+  else showThumbnailOverlay();
 }
 
 // --- YouTube Home topic-chip memory -----------------------------------------
@@ -806,6 +952,10 @@ function onClick(action: string): void {
     }
     return;
   }
+  if (action === 'thumbnail') {
+    toggleThumbnailOverlay();
+    return;
+  }
   console.log(TAG, 'click:', action, '(not wired yet)');
 }
 
@@ -817,17 +967,27 @@ function buildBar(): HTMLElement {
   for (const def of BUTTONS) {
     const btn = document.createElement('button');
     btn.className = 'syf-btn';
+    if (def.icon) btn.classList.add(`syf-${def.icon}-btn`);
     btn.dataset.action = def.action;
-    btn.textContent = def.label;
+    if (def.icon === 'thumbnail') {
+      const icon = document.createElement('span');
+      icon.className = 'syf-thumbnail-button-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      btn.appendChild(icon);
+      btn.setAttribute('aria-label', def.ariaLabel || def.tip);
+    } else {
+      btn.textContent = def.label;
+    }
     btn.title = def.tip;
     btn.disabled = false; // clickable; availability is conveyed via data-state
-    btn.dataset.state = ['info', 'wipe', 'pause-history'].includes(def.action) ? 'ready' : 'disabled';
+    btn.dataset.state = ['info', 'wipe', 'pause-history', 'thumbnail'].includes(def.action) ? 'ready' : 'disabled';
     btn.addEventListener('click', () => onClick(def.action));
     bar.appendChild(btn);
     buttons[def.action] = btn;
   }
   updateHistoryButton();
   updateFindCommentsButton();
+  updateThumbnailButton();
   return bar;
 }
 
@@ -902,13 +1062,17 @@ function notifyIfContextLost(): void {
 function ensureBar(): void {
   const videoId = getVideoId();
   if (!videoId) {
+    closeThumbnailOverlay(false);
     document.getElementById(BAR_ID)?.remove();
     current = {};
     // Off a watch page: keep observing so we re-inject when the user navigates back.
     observeForChanges();
     return;
   }
-  if (videoId !== current.videoId) current = { videoId };
+  if (videoId !== current.videoId) {
+    closeThumbnailOverlay(false);
+    current = { videoId };
+  }
 
   if (!document.getElementById(BAR_ID)) {
     const mount = findMount();
@@ -1101,6 +1265,7 @@ function stopObserving(): void {
 // A navigation tears down our bar; re-arm the observer so we catch the new mount as
 // the page re-renders, then ensureBar() disconnects it again once the bar is in place.
 function onNav(): void {
+  closeThumbnailOverlay(false);
   lastHomeChipAutoKey = '';
   scheduleHomeChipMemory();
   observeForChanges();

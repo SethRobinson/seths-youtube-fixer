@@ -19,6 +19,8 @@ YouTube. Personal project; owner is Seth. Main features:
    comment (bottom) and Like/Reply natively. (DONE — see Feature 3 in Status.)
 5. **Remember Home topic chip** — locally remember the last non-All YouTube Home topic chip and
    replay YouTube's own chip click on the next Home load.
+6. **Show thumbnail** — overlay the current video's original/highest-available thumbnail over the
+   player so it can be compared against the video, then close it to return to playback.
 
 The two feedback buttons work by capturing YouTube's internal feedback endpoints from
 recommendation cards and replaying them — **never fabricated**. They stay grayed (but still
@@ -96,13 +98,18 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
 - **UX:** grayed "Less like this"/"Don't recommend channel" buttons stay clickable — clicking a
   grayed one shows a toast explaining why it's unavailable (`showToast`). Bar buttons: **Less like
   this** · **Don't recommend channel** · **⏸ Pause history** · **Forget recent** · **Find in
-  comments** · **ℹ Info**. (See above for the label history; internal ids stay `nah`/`hate-channel`.)
+  comments** · **Show thumbnail** (icon-only) · **ℹ Info**. (See above for the label history;
+  internal ids stay `nah`/`hate-channel`.)
 - **UX (bar layout, 2026-06-16):** the bar is a single **non-wrapping row** with **no brand label**
   (the old "Seth's YouTube Fixer" text was removed). Buttons **auto-scale down to stay on one row**
   as the watch column narrows: `.syf-bar` is a `container-type: inline-size` query container and
   `.syf-btn` sizes its `font-size`/`padding` with `clamp(min, …cqi, max)` off the bar's width (caps
   at the comfortable desktop size, shrinks toward the min on narrow columns). The product name now
   appears only on the **ℹ Info** tooltip and inside the Info dialog (options page `<h1>` + footer).
+- **UX (thumbnail overlay, 2026-07-04):** the compact icon button immediately before **ℹ Info**
+  toggles an overlay inside the YouTube player using `i.ytimg.com/vi/<id>/maxresdefault.jpg` with
+  SD/HQ/MQ fallbacks. Opening it pauses the video if it was playing; closing via the player X button,
+  Escape, the toolbar toggle, or SPA navigation restores/cleans up appropriately.
 - **UX (2026-06-16):**
   - **⏸ Pause history / ▶ Resume history** — REAL inline toggle. Pausing/resuming watch history is
     a `feedbackToken` on the same `/youtubei/v1/feedback` endpoint as the two feedback buttons. The bridge extracts
