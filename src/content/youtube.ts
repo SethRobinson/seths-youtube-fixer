@@ -9,6 +9,8 @@ import {
   type SyfSettings,
   type HistoryResult,
 } from '../common/messages';
+import { isVideoId, membersOnlyCss, MEMBER_VIDEO_CAP, type MemberVideoState } from '../common/members-only';
+import { isChannelId } from '../common/channel-exceptions';
 
 const TAG = '[SYF]';
 const BAR_ID = 'syf-bar';
@@ -84,12 +86,31 @@ let thumbnailHost: HTMLElement | null = null;
 let thumbnailVideo: HTMLVideoElement | null = null;
 let thumbnailWasPlaying = false;
 let thumbnailKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+const membersOnlyVideos = new Map<string, MemberVideoState>();
+let membersOnlyStyle: HTMLStyleElement | undefined;
+
+function renderMembersOnlyFilter(): void {
+  document.documentElement.classList.toggle('syf-hide-members-only', !!settings.hideMembersOnly);
+  if (!settings.hideMembersOnly) {
+    membersOnlyStyle?.remove();
+    membersOnlyStyle = undefined;
+    return;
+  }
+  if (!membersOnlyStyle) {
+    membersOnlyStyle = document.createElement('style');
+    membersOnlyStyle.id = 'syf-members-only-rules';
+    document.documentElement.appendChild(membersOnlyStyle);
+  }
+  const exceptions = Array.isArray(settings.membersOnlyChannelExceptions) ? settings.membersOnlyChannelExceptions : [];
+  membersOnlyStyle.textContent = membersOnlyCss(membersOnlyVideos.values(), exceptions.map((item) => item.channelId));
+}
 
 function applySettings(s: SyfSettings): void {
   settings = s;
   const hideRecommendedPlaylists = !!(s.hideRecommendedPlaylists ?? s.hideHomePlaylists);
   document.documentElement.classList.toggle('syf-hide-shorts', !!s.hideShorts);
   document.documentElement.classList.toggle('syf-hide-recommended-playlists', hideRecommendedPlaylists);
+  renderMembersOnlyFilter();
   updateHistoryButton();
   updateFindCommentsButton();
   scheduleHomeChipMemory();
@@ -1266,6 +1287,26 @@ window.addEventListener('message', (e: MessageEvent) => {
   const d = e.data;
   if (!d || d.__syf !== true || d.dir !== 'from-page') return;
   switch (d.type) {
+    case 'MEMBER_VIDEOS': {
+      if (!Array.isArray(d.items)) break;
+      let changed = false;
+      for (const item of d.items.slice(0, MEMBER_VIDEO_CAP * 2)) {
+        if (!isVideoId(item?.videoId) || typeof item.membersOnly !== 'boolean') continue;
+        const previous = membersOnlyVideos.get(item.videoId);
+        if (item.membersOnly) {
+          const channelId = isChannelId(item.channelId) ? item.channelId : previous?.channelId;
+          if (previous && previous.channelId === channelId) continue;
+          membersOnlyVideos.set(item.videoId, { videoId: item.videoId, membersOnly: true, channelId });
+        } else {
+          if (!previous) continue;
+          membersOnlyVideos.delete(item.videoId);
+        }
+        changed = true;
+      }
+      while (membersOnlyVideos.size > MEMBER_VIDEO_CAP) membersOnlyVideos.delete(membersOnlyVideos.keys().next().value!);
+      if (changed && settings.hideMembersOnly) renderMembersOnlyFilter();
+      break;
+    }
     case 'CAPTURE':
       chrome.runtime?.sendMessage?.({ type: 'SYF_CAPTURE', items: d.items } as SyfMessage).catch(() => {});
       break;

@@ -18,6 +18,7 @@ import {
   MAX_CACHE_CAP,
   MAX_FEEDBACK_BYTES,
 } from '../common/feedback';
+import { channelInputUrl, isChannelId } from '../common/channel-exceptions';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const apiKey = $<HTMLInputElement>('apiKey');
@@ -27,6 +28,12 @@ const maxVideosInput = $<HTMLInputElement>('maxVideos');
 const scanCapInput = $<HTMLInputElement>('scanCap');
 const hideShorts = $<HTMLInputElement>('hideShorts');
 const hideRecommendedPlaylists = $<HTMLInputElement>('hideRecommendedPlaylists');
+const hideMembersOnly = $<HTMLInputElement>('hideMembersOnly');
+const memberExceptionInput = $<HTMLInputElement>('memberExceptionInput');
+const memberExceptionForm = $<HTMLFormElement>('memberExceptionForm');
+const addMemberException = $<HTMLButtonElement>('addMemberException');
+const memberExceptionsList = $<HTMLUListElement>('memberExceptionsList');
+const memberExceptionStatus = $<HTMLParagraphElement>('memberExceptionStatus');
 const rememberHomeChip = $<HTMLInputElement>('rememberHomeChip');
 const rememberedHomeChipText = $<HTMLElement>('rememberedHomeChipText');
 const clearHomeChip = $<HTMLButtonElement>('clearHomeChip');
@@ -61,6 +68,8 @@ async function initSettings() {
   dailyQuotaInput.value = String(s.apiDailyQuota ?? DEFAULT_DAILY_QUOTA);
   hideShorts.checked = !!s.hideShorts;
   hideRecommendedPlaylists.checked = !!(s.hideRecommendedPlaylists ?? s.hideHomePlaylists);
+  hideMembersOnly.checked = !!s.hideMembersOnly;
+  renderMemberExceptions(s);
   rememberHomeChip.checked = s.rememberHomeChip !== false;
   renderRememberedHomeChip(s);
 }
@@ -70,6 +79,76 @@ function renderRememberedHomeChip(s: SyfSettings): void {
   rememberedHomeChipText.textContent = label || 'None';
   clearHomeChip.disabled = !label;
 }
+
+function exceptionStatus(text: string, error = false): void {
+  memberExceptionStatus.textContent = text;
+  memberExceptionStatus.dataset.error = String(error);
+}
+
+function renderMemberExceptions(s: SyfSettings): void {
+  memberExceptionsList.replaceChildren();
+  const entries = Array.isArray(s.membersOnlyChannelExceptions) ? s.membersOnlyChannelExceptions : [];
+  for (const channel of entries) {
+    if (!isChannelId(channel.channelId)) continue;
+    const row = document.createElement('li');
+    row.dataset.channelId = channel.channelId;
+    const name = channel.name || channel.channelId;
+    const link = document.createElement('a');
+    link.href = `https://www.youtube.com/channel/${channel.channelId}`;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = name;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'secondary small';
+    remove.textContent = 'Remove';
+    remove.setAttribute('aria-label', `Remove exception for ${name}`);
+    remove.addEventListener('click', async () => {
+      remove.disabled = true;
+      try {
+        const result = await chrome.runtime.sendMessage({ type: 'SYF_REMOVE_MEMBER_EXCEPTION', channelId: channel.channelId } as SyfMessage);
+        if (!result?.ok) throw new Error(result?.error || 'Couldn’t remove that channel. Try again.');
+        renderMemberExceptions(await loadSettings());
+        exceptionStatus(`${name} removed from exceptions.`);
+        flashSaved();
+      } catch (error) {
+        remove.disabled = false;
+        exceptionStatus(error instanceof Error ? error.message : 'Couldn’t remove that channel. Try again.', true);
+      }
+    });
+    row.append(link, remove);
+    memberExceptionsList.append(row);
+  }
+}
+
+memberExceptionForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (addMemberException.disabled) return;
+  const input = memberExceptionInput.value.trim();
+  try { channelInputUrl(input); }
+  catch (error) {
+    exceptionStatus(error instanceof Error ? error.message : 'Enter an @handle or a YouTube channel URL.', true);
+    memberExceptionInput.focus();
+    return;
+  }
+  addMemberException.disabled = true;
+  memberExceptionInput.disabled = true;
+  exceptionStatus('Looking up channel…');
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'SYF_ADD_MEMBER_EXCEPTION', input } as SyfMessage);
+    if (!result?.ok) throw new Error(result?.error || 'Couldn’t add that channel. Try again.');
+    memberExceptionInput.value = '';
+    renderMemberExceptions(await loadSettings());
+    exceptionStatus(result.added ? `${result.channel.name} added. Its members-only videos will stay visible.` : 'That channel is already in the exception list.');
+    flashSaved();
+  } catch (error) {
+    exceptionStatus(error instanceof Error ? error.message : 'Couldn’t add that channel. Try again.', true);
+  } finally {
+    addMemberException.disabled = false;
+    memberExceptionInput.disabled = false;
+    memberExceptionInput.focus();
+  }
+});
 
 // Reveal/hide the API key (masked by default so it isn't shoulder-surfed).
 toggleKey.addEventListener('click', () => {
@@ -132,6 +211,7 @@ function commitApiKey(): void {
 
 hideShorts.addEventListener('change', () => void patchSettings({ hideShorts: hideShorts.checked }));
 hideRecommendedPlaylists.addEventListener('change', () => void patchSettings({ hideRecommendedPlaylists: hideRecommendedPlaylists.checked }));
+hideMembersOnly.addEventListener('change', () => void patchSettings({ hideMembersOnly: hideMembersOnly.checked }));
 rememberHomeChip.addEventListener('change', () => void patchSettings({ rememberHomeChip: rememberHomeChip.checked }));
 clearHomeChip.addEventListener('click', async () => {
   await patchSettings({ rememberedHomeChip: null });
@@ -157,6 +237,8 @@ apiKey.addEventListener('change', () => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes[SETTINGS_KEY]) return;
   const s = { ...DEFAULT_SETTINGS, ...(changes[SETTINGS_KEY].newValue ?? {}) } as SyfSettings;
+  hideMembersOnly.checked = !!s.hideMembersOnly;
+  renderMemberExceptions(s);
   rememberHomeChip.checked = s.rememberHomeChip !== false;
   renderRememberedHomeChip(s);
 });

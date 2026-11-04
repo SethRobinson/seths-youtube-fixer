@@ -1,8 +1,11 @@
+import { memberVideoState, MEMBER_VIDEO_CAP, type MemberVideoState } from '../common/members-only';
+import { isChannelId } from '../common/channel-exceptions';
+
 // MAIN-world bridge: reads YouTube's innertube JSON to capture "Not interested"
 // and "Don't recommend channel" feedback tokens, and reports the current watch
 // video's context. Talks to the isolated content script via window.postMessage.
-// No chrome.* APIs here. It also submits feedback (Nah/Hate/pause-history) on
-// request from the isolated content script via a 'to-page' REPLAY message.
+// No chrome.* APIs or authenticated writes here. It also reports explicit
+// members-only video badges for the isolated world's optional display filter.
 
 interface BridgeMsg {
   __syf: true;
@@ -123,15 +126,40 @@ function lockupTitle(lv: any): string | undefined {
   return lv?.metadata?.lockupMetadataViewModel?.title?.content;
 }
 
-function extractTuples(root: any): any[] {
+function extractTuples(root: any, membership?: MemberVideoState[]): any[] {
   const out: any[] = [];
   const seen = new WeakSet<object>();
-  (function walk(o: any, d: number) {
+  const channelRoots = new WeakMap<object, string>();
+  const channelId = root?.metadata?.channelMetadataRenderer?.externalId;
+  // Upload grids omit the uploader on individual cards. Scope this fallback to
+  // selected Videos/Streams/Membership tabs; featured pages can show other creators.
+  if (isChannelId(channelId)) {
+    const tabs = root?.contents?.twoColumnBrowseResultsRenderer?.tabs;
+    for (const entry of Array.isArray(tabs) ? tabs : []) {
+      const tab = entry?.tabRenderer;
+      const url = tab?.endpoint?.commandMetadata?.webCommandMetadata?.url || '';
+      if (tab?.selected && tab.content && /\/(videos|streams|membership)\/?(?:[?#]|$)/.test(url)) {
+        channelRoots.set(tab.content, channelId);
+      }
+    }
+  }
+  (function walk(o: any, d: number, inheritedOwner?: string) {
     if (!o || typeof o !== 'object' || d > 45) return;
     if (seen.has(o)) return;
     seen.add(o);
+    const continuation = o.appendContinuationItemsAction || o.reloadContinuationItemsCommand;
+    const owner = channelRoots.get(o) || channelGridOwners.get(continuation?.targetId) || inheritedOwner;
+    const targetId = o.richGridRenderer?.targetId || o.gridRenderer?.targetId;
+    if (owner && typeof targetId === 'string') {
+      channelGridOwners.set(targetId, owner);
+      if (channelGridOwners.size > 128) channelGridOwners.delete(channelGridOwners.keys().next().value!);
+    }
+    if (membership) {
+      const member = memberVideoState(o, owner);
+      if (member) membership.push(member);
+    }
     if (Array.isArray(o)) {
-      for (const v of o) walk(v, d + 1);
+      for (const v of o) walk(v, d + 1, owner);
       return;
     }
 
@@ -173,7 +201,7 @@ function extractTuples(root: any): any[] {
         });
       }
     }
-    for (const k of Object.keys(o)) walk(o[k], d + 1);
+    for (const k of Object.keys(o)) walk(o[k], d + 1, owner);
   })(root, 0);
   return out;
 }
@@ -196,6 +224,8 @@ function cappedSet(map: Map<string, any>, key: string, value: any): void {
 const tokenIndex = new Map<string, any>();
 const undoIndex = new Map<string, any>();
 const videoIndex = new Map<string, any>(); // videoId -> capture tuple, for click-time capture
+const membersOnlyVideos = new Map<string, MemberVideoState>();
+const channelGridOwners = new Map<string, string>(); // channel upload continuation target -> uploader
 function indexTuple(t: any): void {
   if (t.videoId) cappedSet(videoIndex, t.videoId, t);
   if (t.notInterestedToken)
@@ -252,7 +282,28 @@ function liveRoots(): any[] {
 
 function captureFrom(root: any): void {
   try {
-    const items = extractTuples(root);
+    const membership: MemberVideoState[] = [];
+    const items = extractTuples(root, membership);
+    const changedMembership: MemberVideoState[] = [];
+    for (const member of membership) {
+      const previous = membersOnlyVideos.get(member.videoId);
+      if (member.membersOnly) {
+        // Sparse continuations can omit the owner; retain a previously known ID.
+        const next = { ...member, ...(member.channelId || previous?.channelId ? { channelId: member.channelId || previous?.channelId } : {}) };
+        if (previous && previous.channelId === next.channelId) continue;
+        membersOnlyVideos.set(member.videoId, next);
+        changedMembership.push(next);
+      } else if (previous) {
+        membersOnlyVideos.delete(member.videoId);
+        changedMembership.push(member);
+      }
+    }
+    while (membersOnlyVideos.size > MEMBER_VIDEO_CAP) {
+      const videoId = membersOnlyVideos.keys().next().value!;
+      membersOnlyVideos.delete(videoId);
+      changedMembership.push({ videoId, membersOnly: false });
+    }
+    if (changedMembership.length) post('MEMBER_VIDEOS', { items: changedMembership });
     const fresh: any[] = [];
     for (const t of items) {
       const prev = videoIndex.get(t.videoId);
@@ -403,6 +454,8 @@ window.addEventListener('message', (e: MessageEvent) => {
     captureVideo(d.videoId);
   } else if (d.type === 'REQUEST_CONFIG') {
     postConfig();
+    // The first capture can precede the isolated script's message listener.
+    post('MEMBER_VIDEOS', { items: [...membersOnlyVideos.values()] });
   }
 });
 

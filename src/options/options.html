@@ -78,6 +78,16 @@
       .meter > span { display: block; height: 100%; background: var(--accent); width: 0; }
       .remember-chip { margin: 8px 0 0 27px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: #5f6368; }
       .remember-chip b { color: #0f0f0f; }
+      .member-exceptions { margin: 10px 0 18px 27px; }
+      .member-exceptions label { margin-top: 0; font-size: 13px; }
+      .exception-add { display: flex; gap: 8px; }
+      .exception-add input { flex: 1; min-width: 0; }
+      .exception-add button { flex-shrink: 0; }
+      .exception-list { list-style: none; padding: 0; margin: 8px 0 0; }
+      .exception-list li { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+      .exception-list a { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+      .exception-status { min-height: 1.5em; font-size: 12px; color: #5f6368; margin: 4px 0 0; }
+      .exception-status[data-error='true'] { color: #b3261e; }
       /* action log */
       #logStatus { min-height: 16px; color: #b26a00; font-size: 13px; }
       .logrow { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-bottom: 1px solid #eef0f4; }
@@ -148,6 +158,20 @@
       <div class="check">
         <input id="hideRecommendedPlaylists" type="checkbox" />
         <label for="hideRecommendedPlaylists">Hide playlists from recommendations<small>Hides playlist and Mix recommendations on Home and in the Watch page sidebar. Applies immediately.</small></label>
+      </div>
+      <div class="check">
+        <input id="hideMembersOnly" type="checkbox" />
+        <label for="hideMembersOnly">Hide members-only videos<small>Hides video cards marked “Members only” across Home, Search, Subscriptions, channel pages, and the Watch page sidebar. Applies immediately, except for channels you add below.</small></label>
+      </div>
+      <div class="member-exceptions">
+        <label for="memberExceptionInput">Always show members-only videos from these channels</label>
+        <form id="memberExceptionForm" class="exception-add">
+          <input id="memberExceptionInput" type="text" placeholder="@handle or YouTube channel URL" aria-describedby="memberExceptionHelp memberExceptionStatus" autocomplete="off" spellcheck="false" />
+          <button id="addMemberException" type="submit">Add channel</button>
+        </form>
+        <small id="memberExceptionHelp">Add channels you’ve joined or want to keep seeing. Exceptions are saved in this browser and only affect the members-only filter.</small>
+        <p id="memberExceptionStatus" class="exception-status" role="status" aria-live="polite"></p>
+        <ul id="memberExceptionsList" class="exception-list" aria-label="Members-only channel exceptions"></ul>
       </div>
       <div class="check">
         <input id="rememberHomeChip" type="checkbox" />

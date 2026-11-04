@@ -50,6 +50,10 @@ A single toggle hides Shorts shelves, cards, and the sidebar link across YouTube
 
 A single toggle hides playlist and Mix recommendations on Home and in the Watch page sidebar. It is local display filtering only: it does not submit feedback to YouTube or change recommendations on other devices.
 
+### Hide members-only videos
+
+An optional toggle in **Settings → Feed** hides video cards marked **Members only** on Home, Search, Subscriptions, channel pages, and in the Watch page sidebar. It starts off and applies immediately, including newly loaded cards. To keep a channel visible, enter its **@handle or channel URL** in the exception list below the toggle and click **Add channel**. Use **Remove** to filter that channel again. This only changes what your browser displays.
+
 ### Remember Home topic chip
 
 Click a topic chip on YouTube Home, like Gaming or Recently uploaded, and the extension remembers that choice locally. The next time Home loads, it selects that chip again automatically. Clicking All clears the remembered chip.

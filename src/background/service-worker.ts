@@ -27,6 +27,7 @@ import {
   type RepliesPageResult,
   type QuotaResult,
 } from '../common/messages';
+import { isChannelId, resolveMemberChannel, type MemberChannelException } from '../common/channel-exceptions';
 
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('[SYF] installed:', details.reason);
@@ -115,6 +116,29 @@ function patchSettings(patch: Partial<SyfSettings>): Promise<void> {
     settingsMem = { ...s, ...patch };
     await chrome.storage.local.set({ [SETTINGS_KEY]: settingsMem });
   });
+}
+
+// Compute list edits inside the same write queue as other settings patches so
+// two settings windows can't overwrite one another's additions/removals.
+async function editMemberExceptions(input: { add: MemberChannelException } | { remove: string }): Promise<boolean> {
+  let changed = false;
+  let failed = false;
+  await enqueue(async () => {
+    const settings = await loadSettings();
+    const list = Array.isArray(settings.membersOnlyChannelExceptions) ? settings.membersOnlyChannelExceptions : [];
+    const next = 'add' in input
+      ? list.some((item) => item.channelId === input.add.channelId) ? list : [...list, input.add]
+      : list.filter((item) => item.channelId !== input.remove);
+    changed = next.length !== list.length;
+    if (!changed) return;
+    const updated = { ...settings, membersOnlyChannelExceptions: next };
+    try {
+      await chrome.storage.local.set({ [SETTINGS_KEY]: updated });
+      settingsMem = updated;
+    } catch { failed = true; }
+  });
+  if (failed) throw new Error('Couldn’t save channel exceptions. Try again.');
+  return changed;
 }
 
 // --- API quota estimate (local) ---------------------------------------------------------
@@ -596,6 +620,30 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
     case 'SYF_INJECTED':
       sendResponse({ ok: true });
       return false;
+
+    case 'SYF_ADD_MEMBER_EXCEPTION':
+      (async () => {
+        try {
+          if (typeof msg.input !== 'string' || msg.input.length > 2000) throw new Error('Enter an @handle or a YouTube channel URL.');
+          const channel = await resolveMemberChannel(msg.input);
+          const added = await editMemberExceptions({ add: channel });
+          sendResponse({ ok: true, channel, added });
+        } catch (error) {
+          sendResponse({ ok: false, error: error instanceof Error ? error.message : 'Couldn’t add that channel. Try again.' });
+        }
+      })();
+      return true;
+
+    case 'SYF_REMOVE_MEMBER_EXCEPTION':
+      if (!isChannelId(msg.channelId)) {
+        sendResponse({ ok: false, error: 'Invalid channel ID.' });
+        return false;
+      }
+      editMemberExceptions({ remove: msg.channelId }).then(
+        () => sendResponse({ ok: true }),
+        () => sendResponse({ ok: false, error: 'Couldn’t save channel exceptions. Try again.' })
+      );
+      return true;
 
     case 'SYF_CAPTURE':
       enqueue(async () => {

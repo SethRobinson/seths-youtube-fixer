@@ -21,6 +21,7 @@ YouTube. Personal project; owner is Seth. Main features:
    replay YouTube's own chip click on the next Home load.
 6. **Show thumbnail** — overlay the current video's original/highest-available thumbnail over the
    player so it can be compared against the video, then close it to return to playback.
+7. **Hide members-only videos** — optional local filtering of cards with YouTube's explicit membership badge.
 
 The two feedback buttons work by capturing YouTube's internal feedback endpoints from
 recommendation cards and replaying them — **never fabricated**. They stay grayed (but still
@@ -31,6 +32,8 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
 
 ## Status
 
+- **Members-only filter (2026-11-04):** `docs/members-only-filter.md` covers detection, rendering, and tests.
+  Default off; manual channel exceptions resolve handles/URLs to stable IDs. Upload grids omit uploader IDs: scope fallbacks to the selected uploads tab and its continuation target, never the whole channel page.
 - **Phase 0 — DONE:** Scaffold + dynamic CDP test harness. Button bar injects on watch
   pages. Verified end-to-end via `npm run drive`.
 - **Feature 1a — DONE (capture + availability, dry-run clicks):** The MAIN-world bridge reads the
@@ -173,7 +176,7 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
     only; it does not call hidden browse APIs or change recommendations on other devices. Options page
     has a Feed checkbox/readout/Clear button. Settings include
     `hideShorts`, `hideRecommendedPlaylists`, `rememberHomeChip`, `rememberedHomeChip`,
-    `feedbackTtlDays`, `maxCacheVideos`, `lastHistoryPaused`, `dismissedWarnings`. No current setting
+    `hideMembersOnly`, `membersOnlyChannelExceptions`, `feedbackTtlDays`, `maxCacheVideos`, `lastHistoryPaused`, `dismissedWarnings`. No current setting
     needs a page reload (all apply live).
 - **Release prep (2026-06-17 — public-release pass):** rewrote `README.md` for end users
   (features + screenshots in `docs/images/` + Load-unpacked install for Chrome/Brave);
@@ -478,6 +481,8 @@ correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
 - `src/wipe/` — standalone Forget recent page, opened in a new tab via `wipe.html?minutes=N&authuser=N&pageId=<brandId>`.
   (The old standalone `src/log/` page was removed — the action log now lives in the options page.)
 - `src/common/messages.ts` — shared messages/types/settings.
+- `src/common/members-only.ts` — explicit members-only badge detection and card-filter CSS; see `docs/members-only-filter.md`.
+- `src/common/channel-exceptions.ts` — validates channel input and resolves public channel metadata without credentials/API quota.
 - `src/icons/` — extension icons (16/32/48/128 PNG), referenced by the manifest; copied to
   `dist/icons/` by the build. The 512px master lives in `store-assets/` (listing art, not shipped).
 - `scripts/` — esbuild build + CDP harness (`chrome-lib`, `setup`, `drive`, `reload`, `diag`).

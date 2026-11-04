@@ -1,6 +1,7 @@
 // Typed messages between content script, popup, options, and the service worker.
 import { FEEDBACK_KEY, ACTIONLOG_KEY, DEFAULT_CACHE_CAP } from './feedback';
 import type { CaptureItem, FeedbackStats, FeedbackType, ActionLogEntry } from './feedback';
+import type { MemberChannelException } from './channel-exceptions';
 
 export interface NewActionInput {
   type: FeedbackType;
@@ -38,6 +39,8 @@ export type SyfMessage =
   | { type: 'SYF_HISTORY'; action: 'toggle' | 'state'; authUser?: string; pageId?: string }
   | { type: 'SYF_HISTORY_DO'; action: 'toggle' | 'state' }
   | { type: 'SYF_PATCH_SETTINGS'; patch: Partial<SyfSettings> }
+  | { type: 'SYF_ADD_MEMBER_EXCEPTION'; input: string }
+  | { type: 'SYF_REMOVE_MEMBER_EXCEPTION'; channelId: string }
   | { type: 'SYF_OPEN_COMMENT_SEARCH'; videoId: string; title?: string }
   | { type: 'SYF_COMMENTS_PAGE'; videoId: string; pageToken?: string; order?: 'relevance' | 'time' }
   | { type: 'SYF_COMMENT_REPLIES'; parentId: string; pageToken?: string }
@@ -182,6 +185,8 @@ export interface SyfSettings {
   apiDailyQuota?: number; // your YouTube Data API daily quota (units); for the "used today" gauge
   hideShorts?: boolean; // hide Shorts shelves/cards from feeds
   hideRecommendedPlaylists?: boolean; // hide playlist/Mix cards from YouTube recommendation surfaces
+  hideMembersOnly?: boolean; // locally hide video cards explicitly marked members-only
+  membersOnlyChannelExceptions?: MemberChannelException[]; // manually allowed channels, stored by stable ID
   hideHomePlaylists?: boolean; // legacy setting key; honored as a fallback for hideRecommendedPlaylists
   rememberHomeChip?: boolean; // remember the last non-All YouTube Home topic chip and replay it on Home
   rememberedHomeChip?: RememberedHomeChip | null; // visible chip label + optional account metadata
@@ -199,6 +204,8 @@ export const DEFAULT_SETTINGS: SyfSettings = {
   commentSearchReplies: false,
   apiDailyQuota: DEFAULT_DAILY_QUOTA,
   hideShorts: false,
+  hideMembersOnly: false,
+  membersOnlyChannelExceptions: [],
   rememberHomeChip: true,
   rememberedHomeChip: null,
 };
