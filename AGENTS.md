@@ -34,6 +34,7 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
 
 - **Members-only filter (2026-11-04):** `docs/members-only-filter.md` covers detection, rendering, and tests.
   Default off; manual channel exceptions resolve handles/URLs to stable IDs. Upload grids omit uploader IDs: scope fallbacks to the selected uploads tab and its continuation target, never the whole channel page.
+- **Version 0.1.2 (2026-11-04):** package, lockfile, and extension manifest bumped for the members-only filter and channel exceptions.
 - **Phase 0 — DONE:** Scaffold + dynamic CDP test harness. Button bar injects on watch
   pages. Verified end-to-end via `npm run drive`.
 - **Feature 1a — DONE (capture + availability, dry-run clicks):** The MAIN-world bridge reads the
