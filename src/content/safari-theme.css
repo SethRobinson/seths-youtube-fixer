@@ -1,0 +1,85 @@
+/* Appended only to the Safari bundle. Mobile YouTube defines some desktop color
+   variables but not others, so mixing its text color with our dark fallbacks can
+   produce black-on-black controls. Own both colors and follow Safari's appearance.
+   Keep color-scheme scoped to our UI, never the surrounding YouTube page. */
+:is(.syf-bar, .syf-modal, .syf-toast, .syf-home-chip-toast) {
+  color-scheme: light;
+  --syf-text: #1c1c1e;
+  --syf-muted: #56565b;
+  --syf-surface: #f6f6f8;
+  --syf-panel: #ffffff;
+  --syf-button: #e9e9ed;
+  --syf-hover: #dcdce2;
+  --syf-border: #c5c5cc;
+  --syf-link: #065fd4;
+  --syf-success: #137333;
+  --syf-error: #b3261e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :is(.syf-bar, .syf-modal, .syf-toast, .syf-home-chip-toast) {
+    color-scheme: dark;
+    --syf-text: #f5f5f7;
+    --syf-muted: #b6b6bf;
+    --syf-surface: #1c1c1e;
+    --syf-panel: #242426;
+    --syf-button: #343438;
+    --syf-hover: #46464d;
+    --syf-border: #62626b;
+    --syf-link: #8dc8ff;
+    --syf-success: #81d995;
+    --syf-error: #ffb4ab;
+  }
+}
+
+.syf-bar {
+  background: var(--syf-surface);
+  border-color: var(--syf-border);
+  color: var(--syf-text);
+}
+
+:is(.syf-bar, .syf-modal) .syf-btn,
+.syf-bar .syf-more summary {
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--syf-button);
+  color: var(--syf-text);
+  -webkit-text-fill-color: currentColor;
+}
+
+:is(.syf-bar, .syf-modal) .syf-btn[data-state='ready']:hover,
+.syf-bar .syf-more summary:hover {
+  background: var(--syf-hover);
+}
+
+/* Unavailable buttons remain clickable to explain why. Muted text instead of
+   whole-button opacity keeps labels readable on either background. */
+:is(.syf-bar, .syf-modal) .syf-btn:is([data-state='disabled'], [disabled]) {
+  color: var(--syf-muted);
+  opacity: 1;
+}
+
+:is(.syf-bar, .syf-modal) .syf-btn[data-state='loading'] { opacity: 1; }
+:is(.syf-bar, .syf-modal) .syf-btn[data-state='active'] { background: #065fd4; color: #fff; }
+:is(.syf-bar, .syf-modal) .syf-btn[data-state='sent'] { background: #137333; color: #fff; }
+:is(.syf-bar, .syf-modal) .syf-btn[data-state='sent']:hover { background: #0d5726; }
+:is(.syf-bar, .syf-modal) .syf-btn[data-state='error'] { background: #b3261e; color: #fff; }
+
+:is(.syf-bar, .syf-modal) :is(button, summary, input):focus-visible {
+  outline: 2px solid var(--syf-link);
+  outline-offset: 2px;
+}
+
+.syf-modal .syf-modal-panel { background: var(--syf-panel); color: var(--syf-text); }
+.syf-modal :is(.syf-modal-head, .syf-row, .syf-row-btn, .syf-wipe-list, .syf-wipe-item, .syf-wipe-custom input) {
+  border-color: var(--syf-border);
+}
+.syf-modal .syf-row-btn:hover { background: var(--syf-hover); }
+.syf-modal .syf-activity-link { color: var(--syf-link); }
+.syf-modal .syf-wipe-done { color: var(--syf-success); }
+.syf-modal .syf-wipe-error { color: var(--syf-error); }
+.syf-toast, .syf-home-chip-toast {
+  background: var(--syf-panel);
+  color: var(--syf-text);
+  border-color: var(--syf-border);
+}

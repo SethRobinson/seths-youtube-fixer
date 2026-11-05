@@ -10,6 +10,11 @@
 
 A free Chrome and Brave extension. No accounts, no tracking, no servers. Everything happens in your own browser.
 
+An **iPhone Safari development build** now shares this codebase. It runs on YouTube
+in Safari, with mobile controls, tab-based comment search, and a foreground
+My Activity review. Device validation is still pending; see the
+[Safari build and testing guide](docs/safari-ios.md) for requirements and status.
+
 ---
 
 ## What it does

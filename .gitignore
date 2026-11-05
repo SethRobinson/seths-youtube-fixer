@@ -1,5 +1,12 @@
 node_modules/
 dist/
+dist-safari/
+platforms/safari/build/
+**/xcuserdata/
+*.xcuserstate
+agents_local.md
+platforms/safari/Signing.local.xcconfig
+platforms/safari/build.local.json
 dist-tsc/
 test-results/
 playwright-report/

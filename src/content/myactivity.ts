@@ -5,6 +5,8 @@
 // Each item is wrapped in a <c-wiz data-token data-date> whose data-token is the
 // delete token; at/f.sid/bl come from the inline WIZ_global_data script.
 import type { SyfMessage } from '../common/messages';
+import { IS_SAFARI } from '../common/platform';
+import { mountActivityReview } from '../wipe/activity-review';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const DELETE_RPC = 'TmdDAd';
@@ -180,7 +182,7 @@ function wizParams(): { at: string; fsid: string; bl: string } | null {
 async function rpcDelete(token: string, at: string, fsid: string, bl: string): Promise<boolean> {
   const params = new URLSearchParams({
     rpcids: DELETE_RPC,
-    'source-path': '/product/youtube',
+    'source-path': location.pathname,
     'f.sid': fsid,
     bl,
     hl: 'en',
@@ -242,3 +244,16 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, _sender, sendResponse) =>
 });
 
 console.log('[SYF] My Activity content script ready');
+
+if (IS_SAFARI) {
+  const openReview = () => {
+    const match = location.hash.match(/^#syf-forget=(\d+)$/);
+    if (!match || !document.body) return;
+    mountActivityReview(() => collect().map(toWire), async (token) => {
+      const wiz = wizParams();
+      return !!wiz && rpcDelete(token, wiz.at, wiz.fsid, wiz.bl);
+    }, Number(match[1]));
+  };
+  window.addEventListener('hashchange', openReview);
+  openReview();
+}

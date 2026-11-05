@@ -1,5 +1,9 @@
 import { memberVideoState, MEMBER_VIDEO_CAP, type MemberVideoState } from '../common/members-only';
 import { isChannelId } from '../common/channel-exceptions';
+import { pageRoots, isYouTubeDataRequest, parseYouTubeResponse } from '../common/youtube-page';
+
+const initialRoute = location.pathname + location.search;
+let networkPlayerResponse: any;
 
 // MAIN-world bridge: reads YouTube's innertube JSON to capture "Not interested"
 // and "Don't recommend channel" feedback tokens, and reports the current watch
@@ -134,7 +138,7 @@ function extractTuples(root: any, membership?: MemberVideoState[]): any[] {
   // Upload grids omit the uploader on individual cards. Scope this fallback to
   // selected Videos/Streams/Membership tabs; featured pages can show other creators.
   if (isChannelId(channelId)) {
-    const tabs = root?.contents?.twoColumnBrowseResultsRenderer?.tabs;
+    const tabs = root?.contents?.twoColumnBrowseResultsRenderer?.tabs || root?.contents?.singleColumnBrowseResultsRenderer?.tabs;
     for (const entry of Array.isArray(tabs) ? tabs : []) {
       const tab = entry?.tabRenderer;
       const url = tab?.endpoint?.commandMetadata?.webCommandMetadata?.url || '';
@@ -263,25 +267,16 @@ function indexTuple(t: any): void {
 // gray on sidebar-clicked videos" — every video that rotated into the sidebar
 // after the first SPA nav was previously never captured.
 function liveRoots(): any[] {
-  const roots: any[] = [];
-  const add = (sel: string) => {
-    const d = (document.querySelector(sel) as any)?.data;
-    if (d) roots.push(d);
-  };
-  // Read only the container for the current page type (avoids walking a hidden,
-  // stale ytd-browse left over from a previous SPA view).
-  const path = location.pathname;
-  if (path === '/watch') add('ytd-watch-flexy');
-  else if (path === '/results') add('ytd-search');
-  else add('ytd-browse'); // home, /feed/*, channel pages, etc.
-  // Fall back to ytInitialData only before the polymer element has hydrated
-  // (very first paint of a full load).
-  if (!roots.length && (window as any).ytInitialData) roots.push((window as any).ytInitialData);
-  return roots;
+  return pageRoots(initialRoute);
 }
 
 function captureFrom(root: any): void {
   try {
+    const candidates = Array.isArray(root) ? root : [root];
+    for (const candidate of candidates) {
+      const player = candidate?.playerResponse || candidate?.response?.playerResponse || candidate;
+      if (player?.videoDetails?.videoId) networkPlayerResponse = player;
+    }
     const membership: MemberVideoState[] = [];
     const items = extractTuples(root, membership);
     const changedMembership: MemberVideoState[] = [];
@@ -381,12 +376,12 @@ window.fetch = function (this: unknown, ...args: any[]) {
   try {
     const input = args[0];
     const url = typeof input === 'string' ? input : input?.url;
-    if (url && /\/youtubei\/v1\/(browse|next|search|guide)/.test(url)) {
+    if (url && isYouTubeDataRequest(url, location.href || location.origin)) {
       p.then((res: Response) => {
         res
           .clone()
-          .json()
-          .then((j) => captureFrom(j))
+          .text()
+          .then((text) => { captureFrom(parseYouTubeResponse(text)); readWatchContext(); })
           .catch(() => {});
       }).catch(() => {});
     }
@@ -395,6 +390,32 @@ window.fetch = function (this: unknown, ...args: any[]) {
   }
   return p;
 };
+
+// Mobile YouTube can use XHR for the same responses. Observe the site's own
+// requests; this never initiates an innertube request or sends credentials.
+if (typeof XMLHttpRequest !== 'undefined') {
+  const urls = new WeakMap<XMLHttpRequest, string>();
+  const originalOpen = XMLHttpRequest.prototype.open;
+  const originalSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function (...args: any[]) {
+    urls.set(this, String(args[1]));
+    return (originalOpen as any).apply(this, args);
+  };
+  XMLHttpRequest.prototype.send = function (body) {
+    const url = urls.get(this) || '';
+    if (/\/youtubei\/v1\/feedback(?:[?]|$)/.test(url)) inspectNativeFeedback({ body });
+    if (isYouTubeDataRequest(url, location.href || location.origin)) {
+      this.addEventListener('load', () => {
+        try {
+          const data = this.responseType === 'json' ? this.response : parseYouTubeResponse(this.responseText);
+          captureFrom(data);
+          readWatchContext();
+        } catch { /* unsupported response, leave YouTube alone */ }
+      }, { once: true });
+    }
+    return originalSend.call(this, body);
+  };
+}
 
 // The page's innertube config feeds the isolated content script's authenticated feedback
 // POST — which it performs itself, reading SAPISID from document.cookie. No feedback
@@ -456,6 +477,8 @@ window.addEventListener('message', (e: MessageEvent) => {
     postConfig();
     // The first capture can precede the isolated script's message listener.
     post('MEMBER_VIDEOS', { items: [...membersOnlyVideos.values()] });
+  } else if (d.type === 'PAGE_NAVIGATED') {
+    onNavigate();
   }
 });
 
@@ -463,9 +486,10 @@ window.addEventListener('message', (e: MessageEvent) => {
 function readWatchContext(): void {
   try {
     const mp: any = document.getElementById('movie_player');
-    const pr = mp?.getPlayerResponse?.();
-    const vd = pr?.videoDetails;
-    if (vd?.videoId) {
+    const videoId = new URLSearchParams(location.search).get('v');
+    const vd = [mp?.getPlayerResponse?.(), networkPlayerResponse, (window as any).ytInitialPlayerResponse]
+      .map((response) => response?.videoDetails).find((details) => details?.videoId === videoId && videoId);
+    if (vd) {
       post('WATCH_CONTEXT', {
         videoId: vd.videoId,
         channelId: vd.channelId,
@@ -533,7 +557,7 @@ function readHistoryInfo(): void {
   try {
     // ytd-browse.data is the live (SPA-fresh) source; ytInitialData is only
     // correct on a full load and goes stale after navigation.
-    const data = (document.querySelector('ytd-browse') as any)?.data || (window as any).ytInitialData;
+    const data = liveRoots()[0];
     if (!data) return;
     let token: string | null = null;
     let paused: boolean | null = null;
@@ -573,17 +597,20 @@ function readHistoryInfo(): void {
 }
 
 // --- triggers: parse embedded data + watch context after each navigation ---
+let navigationTimer: ReturnType<typeof setInterval> | undefined;
 function onNavigate(): void {
+  if (navigationTimer) clearInterval(navigationTimer);
   let tries = 0;
   const tick = () => {
     for (const root of liveRoots()) captureFrom(root);
     readWatchContext();
     readHistoryInfo();
+    postConfig();
   };
   tick(); // capture immediately, then retry as the SPA hydrates
-  const iv = setInterval(() => {
+  navigationTimer = setInterval(() => {
     tick();
-    if (++tries >= 6) clearInterval(iv);
+    if (++tries >= 6) { clearInterval(navigationTimer); navigationTimer = undefined; }
   }, 700);
 }
 

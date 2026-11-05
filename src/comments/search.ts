@@ -3,6 +3,7 @@
 // watch page, framed and scrolled to the clicked comment (header-stripped by our
 // declarativeNetRequest rule), so Like/Reply happen natively. Draggable divider.
 import { SETTINGS_KEY, DEFAULT_SCAN_CAP, MIN_SCAN_CAP, MAX_SCAN_CAP } from '../common/messages';
+import { COMMENT_TABS } from '../common/platform';
 import type { SyfMessage, SyfSettings, CommentsPageResult, RepliesPageResult, CsComment, CsThread, QuotaResult } from '../common/messages';
 
 const params = new URLSearchParams(location.search);
@@ -20,6 +21,10 @@ const repliesChk = $<HTMLInputElement>('cs-replies');
 const goBtn = $<HTMLButtonElement>('cs-go');
 const stopBtn = $<HTMLButtonElement>('cs-stop');
 const quotaEl = $('cs-quota');
+if (COMMENT_TABS) {
+  document.body.classList.add('cs-tabs');
+  listEl.firstElementChild!.textContent = 'Search the public comments on this video. Tap a match to open it in a YouTube tab, where you can Like or Reply. Return to this tab for your search results.';
+}
 
 // Compact "API quota used today" readout (a local estimate — see the options page). Refreshed
 // on open and after each search, since that's when our call count changes.
@@ -38,7 +43,7 @@ $('cs-title').textContent = videoTitle || videoId || 'Comments';
 const thumbEl = $<HTMLImageElement>('cs-thumb');
 if (videoId) {
   thumbEl.src = `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
-  thumbEl.title = 'Open this video in a new window';
+  thumbEl.title = COMMENT_TABS ? 'Open this video in a tab' : 'Open this video in a new window';
   thumbEl.addEventListener('click', () => void openExternal(`https://www.youtube.com/watch?v=${videoId}`));
 }
 document.title = videoTitle ? `Find in comments — ${videoTitle}` : 'Find in comments';
@@ -47,7 +52,17 @@ document.title = videoTitle ? `Find in comments — ${videoTitle}` : 'Find in co
 // search window so it doesn't clutter it (and reused so repeat clicks don't pile
 // up windows). Falls back to a fresh window if that one was closed.
 let auxWin: number | null = null;
+let auxTab: number | null = null;
 async function openExternal(url: string): Promise<void> {
+  if (COMMENT_TABS) {
+    if (auxTab != null) {
+      try { await chrome.tabs.update(auxTab, { url, active: true }); return; }
+      catch { auxTab = null; }
+    }
+    const tab = await chrome.tabs.create({ url, active: true });
+    auxTab = tab.id ?? null;
+    return;
+  }
   try {
     if (auxWin != null) {
       try {
@@ -118,6 +133,7 @@ function showBelow(commentId: string, row: HTMLElement): void {
   selectedRow?.classList.remove('cs-row-sel');
   selectedRow = row;
   row.classList.add('cs-row-sel');
+  if (COMMENT_TABS) { void openExternal(deepLink(commentId)).catch(() => setStatus('Could not open YouTube. Try again.', false)); return; }
   placeholder.style.display = 'none';
   frame.style.display = 'block';
   frame.src = deepLink(commentId);
@@ -185,7 +201,7 @@ function row(thread: CsThread, c: CsComment): HTMLElement {
       <div class="cs-meta"><span class="cs-author">${esc(c.author)}</span><span>${esc(ago(c.publishedAt))}</span><span>👍 ${num(c.likeCount)}</span>${context}</div>
       <div class="cs-text">${highlight(c.text, term)}</div>
     </div>
-    <button class="cs-open" title="Open this comment in a separate window">↗</button>`;
+    <button class="cs-open" title="Open this comment in a ${COMMENT_TABS ? 'YouTube tab' : 'separate window'}">↗</button>`;
   el.addEventListener('click', () => showBelow(c.id, el));
   el.querySelector('.cs-open')!.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -197,7 +213,7 @@ function row(thread: CsThread, c: CsComment): HTMLElement {
     el.querySelectorAll('.cs-av, .cs-author').forEach((n) => {
       const node = n as HTMLElement;
       node.classList.add('cs-chan');
-      node.title = `Open ${c.author || 'this channel'} in a new window`;
+      node.title = `Open ${c.author || 'this channel'} in a ${COMMENT_TABS ? 'tab' : 'new window'}`;
       node.addEventListener('click', (e) => {
         e.stopPropagation();
         void openExternal(channelUrl);
@@ -357,22 +373,25 @@ function finishError(res: CommentsPageResult | undefined): void {
 const split = $('cs-split');
 const divider = $('cs-divider');
 let dragging = false;
-divider.addEventListener('mousedown', (e) => {
+divider.addEventListener('pointerdown', (e) => {
+  divider.setPointerCapture(e.pointerId);
   dragging = true;
   document.body.classList.add('cs-dragging');
   e.preventDefault();
 });
-window.addEventListener('mousemove', (e) => {
+window.addEventListener('pointermove', (e) => {
   if (!dragging) return;
   const rect = split.getBoundingClientRect();
   const top = Math.max(80, Math.min(rect.height - 120, e.clientY - rect.top));
   split.style.gridTemplateRows = `${top}px 9px 1fr`;
 });
-window.addEventListener('mouseup', () => {
+function stopDragging(): void {
   if (!dragging) return;
   dragging = false;
   document.body.classList.remove('cs-dragging');
-});
+}
+window.addEventListener('pointerup', stopDragging);
+window.addEventListener('pointercancel', stopDragging);
 
 // --- wire up ---
 goBtn.addEventListener('click', () => {

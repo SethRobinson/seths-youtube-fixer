@@ -32,6 +32,10 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
 
 ## Status
 
+- **Safari/iPhone port (2026-11-05, development 0.1.3):** `docs/safari-ios.md` covers the shared build, mobile adapters, Xcode wrapper, remote commands, and validation. TypeScript, 26 offline tests, both JS bundles, native WebKit validation, and signed iOS build pass. Version 0.1.3 (build 4) is installed on the physical iPhone 17 Pro. Seth confirmed the controls appear and reports the updated build seems to work; the detailed acceptance matrix is not individually verified. SSH signing needed the optional `loginSession` build mode after the keychain was unlocked. No computer-control permission was granted.
+- **Safari contrast fix (build 4):** the Safari build appends `src/content/safari-theme.css` to its content stylesheet. Toolbar/disclosure/dialog colors use complete palettes selected by `prefers-color-scheme`, scoped to extension UI. This avoids mobile YouTube's partial desktop CSS variables mixing dark text with a dark fallback background. Unavailable buttons use readable muted text instead of opacity. Palette contrast and bundling checked; Seth approved committing the updated build after trying it on the phone.
+- **Build targets:** Chromium remains `dist/`; `npm run build:safari` produces `dist-safari/`. Safari uses tabs for settings/comments and a foreground My Activity review; it ships no iframe header-stripping rule. Machine/signing/device configuration belongs in ignored `platforms/safari/build.local.json` or `agents_local.md`.
+
 - **Members-only filter (2026-11-04):** `docs/members-only-filter.md` covers detection, rendering, and tests.
   Default off; manual channel exceptions resolve handles/URLs to stable IDs. Upload grids omit uploader IDs: scope fallbacks to the selected uploads tab and its continuation target, never the whole channel page.
 - **Version 0.1.2 (2026-11-04):** package, lockfile, and extension manifest bumped for the members-only filter and channel exceptions.
@@ -469,7 +473,7 @@ correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
 - `src/manifest.json` — MV3 manifest.
 - `src/background/service-worker.ts` — background SW (message router, storage).
 - `src/content/youtube.ts` — isolated-world content script: SPA-nav detection, bar injection.
-- `src/content/page-bridge.ts` — MAIN-world script: reads ytInitialData/ytcfg, session feedback POSTs.
+- `src/content/page-bridge.ts` — MAIN-world script: reads page data/ytcfg and observes fetch/XHR/PBJ responses; authenticated writes stay in the isolated content script.
 - `src/content/embed.ts` — isolated-world, `all_frames`: tames the bottom-pane watch iframe (mute/pause
   the video, scroll to the linked comment); only acts when `window.name === 'syf-embed'`.
 - `src/content/styles.css` — bar + in-page modal styles (the comment search has its own page styles).
@@ -496,6 +500,11 @@ correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
 - `test/` — Playwright (`fixtures.ts` attaches over CDP; `smoke.spec.ts`).
 
 ## Commands
+
+- `npm run test:unit` — offline membership + Safari/mobile DOM/runtime tests, no browser control.
+- `npm run build:safari` / `npm run watch:safari` — Safari bundle to `dist-safari/`.
+- `npm run safari:check` — native WebKit manifest validation + unsigned iOS build over SSH.
+- `npm run safari:build` / `npm run safari:install` — signed remote build / build + device installation (no app launch). See `docs/safari-ios.md` for local configuration and keychain requirements.
 
 - `npm run build` / `npm run watch` — bundle `src/` → `dist/`.
 - `npm run typecheck` — `tsc --noEmit`.
@@ -536,9 +545,13 @@ is unchanged). If `.test-profile/` is ever wiped, re-run `npm run setup` and Loa
 - No telemetry, no third-party servers; all data stays local. Never store Google
   cookies/session tokens/credentials. Never fabricate YouTube feedback. These are product
   requirements, not nice-to-haves.
+- **Commit completed work locally without asking for separate approval.** After finishing a
+  task and its relevant validation, review the diff and create a local Git commit of that
+  task's changes. Keep unrelated changes out of the commit and check staged files for secrets.
 - **Never `git push` (or force-push / push tags) without Seth's explicit permission for that
-  specific push.** Approving a commit is NOT approval to push — ask each time. Committing
-  locally is fine when Seth asks; pushing to the remote always needs a separate go-ahead.
+  specific push.** Authorization to commit is NOT authorization to push; each push requires
+  a separate explicit go-ahead.
+- Never add OpenAI, Codex, Claude, or another AI assistant as a commit co-author.
 
 ## Maintaining these files
 

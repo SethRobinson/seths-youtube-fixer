@@ -9,5 +9,5 @@ chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
 
 openOptions.addEventListener('click', (e) => {
   e.preventDefault();
-  chrome.runtime.openOptionsPage();
+  void chrome.runtime.sendMessage({ type: 'SYF_OPEN_OPTIONS' });
 });

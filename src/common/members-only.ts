@@ -1,4 +1,5 @@
 import { isChannelId } from './channel-exceptions';
+import { MOBILE_VIDEO_CARDS } from './youtube-page';
 
 // Read badge enums, never titles, translated labels, or the generic green commerce
 // styling (which YouTube also uses for videos that aren't members-only).
@@ -17,7 +18,7 @@ export function isVideoId(value: unknown): value is string {
 
 export function memberVideoState(node: any, channelGridOwner?: string): MemberVideoState | undefined {
   const card = node?.lockupViewModel ?? node?.videoRenderer ?? node?.compactVideoRenderer ??
-    node?.gridVideoRenderer ?? node?.playlistVideoRenderer;
+    node?.gridVideoRenderer ?? node?.playlistVideoRenderer ?? node?.videoWithContextRenderer;
   if (!card) return;
   const videoId = card.contentId ?? card.videoId;
   if (!isVideoId(videoId)) return;
@@ -49,7 +50,7 @@ export function memberVideoState(node: any, channelGridOwner?: string): MemberVi
 }
 
 const VIDEO_CARDS = ':is(ytd-rich-item-renderer, ytd-rich-grid-media, yt-lockup-view-model, ' +
-  'ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, ytd-playlist-video-renderer)';
+  'ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, ytd-playlist-video-renderer, ' + MOBILE_VIDEO_CARDS + ')';
 
 // CSS handles lazy insertion and recycled cards without another DOM observer or
 // recurring scan. Hide the complete card, including its grid slot, not the shelf.

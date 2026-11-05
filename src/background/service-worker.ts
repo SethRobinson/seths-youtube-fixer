@@ -28,6 +28,7 @@ import {
   type QuotaResult,
 } from '../common/messages';
 import { isChannelId, resolveMemberChannel, type MemberChannelException } from '../common/channel-exceptions';
+import { IS_SAFARI, COMMENT_TABS, openCommentSearch } from '../common/platform';
 
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('[SYF] installed:', details.reason);
@@ -43,6 +44,7 @@ chrome.runtime.onStartup.addListener(() => void syncIframeRuleset());
 // tab exists, so it self-heals across the ephemeral SW's restarts (the enabled-state persists).
 const SEARCH_PAGE_PREFIX = chrome.runtime.getURL('comments/search.html');
 async function setIframeRuleset(on: boolean): Promise<void> {
+  if (COMMENT_TABS) return;
   try {
     await chrome.declarativeNetRequest.updateEnabledRulesets(
       on ? { enableRulesetIds: ['syf_iframe'] } : { disableRulesetIds: ['syf_iframe'] }
@@ -56,17 +58,18 @@ async function setIframeRuleset(on: boolean): Promise<void> {
 // on open is done directly in the SYF_OPEN_COMMENT_SEARCH handler — relying on this to ENABLE
 // would race the just-created tab before its URL is queryable.)
 async function syncIframeRuleset(): Promise<void> {
+  if (COMMENT_TABS) return;
   const tabs = await chrome.tabs.query({}).catch(() => [] as chrome.tabs.Tab[]);
   await setIframeRuleset(tabs.some((t) => t.url?.startsWith(SEARCH_PAGE_PREFIX)));
 }
-chrome.windows.onRemoved.addListener(() => void syncIframeRuleset());
+chrome.windows?.onRemoved?.addListener(() => void syncIframeRuleset());
 chrome.tabs.onRemoved.addListener(() => void syncIframeRuleset());
 void syncIframeRuleset(); // reconcile whenever the SW wakes
 
 // MV3 SWs are ephemeral; flush any pending throttled cache write before suspension.
 // Best-effort (async may not finish) — a lost write is ≤ one throttle window of
 // re-capturable captures.
-chrome.runtime.onSuspend.addListener(() => {
+chrome.runtime.onSuspend?.addListener(() => {
   void flushCache();
   void flushQuota();
 });
@@ -179,6 +182,7 @@ function bumpQuota(units = 1): Promise<void> {
     q.used += units;
     quotaMem = q;
     scheduleQuotaFlush();
+    if (IS_SAFARI) await flushQuota();
   });
 }
 async function getQuotaState(): Promise<QuotaResult> {
@@ -481,7 +485,7 @@ async function handleWipe(msg: WipeRequest): Promise<any> {
 // Submit a feedback token by relaying to an open YouTube tab's bridge (used by
 // the standalone log page, which has no page session of its own).
 async function relayReplay(token: string): Promise<any> {
-  const tabs = await chrome.tabs.query({ url: ['https://www.youtube.com/*'] });
+  const tabs = await chrome.tabs.query({ url: ['https://www.youtube.com/*', 'https://m.youtube.com/*'] });
   const tab = tabs.find((t) => t.id);
   if (!tab?.id) return { ok: false, error: 'no-youtube-tab' };
   try {
@@ -648,10 +652,12 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
     case 'SYF_CAPTURE':
       enqueue(async () => {
         const [cache, settings] = await Promise.all([loadCache(), loadSettings()]);
-        if (mergeCapture(cache, msg.items, settings.maxCacheVideos ?? DEFAULT_CACHE_CAP)) scheduleFlush();
-      });
-      sendResponse({ ok: true });
-      return false;
+        if (mergeCapture(cache, msg.items, settings.maxCacheVideos ?? DEFAULT_CACHE_CAP)) {
+          if (IS_SAFARI) { cacheDirty = true; await flushCache(); }
+          else scheduleFlush();
+        }
+      }).then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: String(e) }));
+      return true;
 
     case 'SYF_LOOKUP':
       Promise.all([loadCache(), loadLog(), loadSettings()]).then(([c, log, settings]) => {
@@ -694,9 +700,8 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
         log.unshift(entry);
         if (log.length > 1000) log.length = 1000;
         await chrome.storage.local.set({ [ACTIONLOG_KEY]: log });
-      });
-      sendResponse({ ok: true, id });
-      return false;
+      }).then(() => sendResponse({ ok: true, id }), (e) => sendResponse({ ok: false, error: String(e) }));
+      return true;
     }
 
     case 'SYF_MARK_UNDONE':
@@ -716,9 +721,8 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
           target.undoneAt = Date.now();
           await chrome.storage.local.set({ [ACTIONLOG_KEY]: log });
         }
-      });
-      sendResponse({ ok: true });
-      return false;
+      }).then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: String(e) }));
+      return true;
 
     case 'SYF_GET_LOG':
       loadLog().then((log) => sendResponse({ ok: true, log }));
@@ -729,21 +733,28 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       return true;
 
     case 'SYF_OPEN_OPTIONS':
-      chrome.runtime.openOptionsPage();
-      sendResponse({ ok: true });
-      return false;
+      chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html') })
+        .then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: String(e) }));
+      return true;
 
     case 'SYF_OPEN_PAGE': {
       (async () => {
         const q = new URLSearchParams();
         if (msg.minutes) q.set('minutes', String(msg.minutes));
         const route = await resolveAccountRoute(msg.authUser, msg.pageId);
+        if (IS_SAFARI) {
+          const url = accountUrl(MA_URL, route.authUser, route.pageId);
+          const minutes = Math.min(1440, Math.max(1, Math.trunc(Number(msg.minutes) || 15)));
+          await chrome.tabs.create({ url: `${url}#syf-forget=${minutes}`, active: true });
+          sendResponse({ ok: true });
+          return;
+        }
         if (route.authUser) q.set('authuser', route.authUser);
         if (route.pageId) q.set('pageId', route.pageId);
         const suffix = q.toString() ? `?${q}` : '';
         await chrome.tabs.create({ url: chrome.runtime.getURL('wipe/wipe.html') + suffix });
         sendResponse({ ok: true });
-      })();
+      })().catch((error) => sendResponse({ ok: false, error: String(error) }));
       return true;
     }
 
@@ -847,10 +858,9 @@ chrome.runtime.onMessage.addListener((msg: SyfMessage, sender, sendResponse) => 
       // A normal browser window (title bar + chrome), modestly sized — not a big popup.
       // Enable the header-strip ruleset now so the bottom pane can frame the real watch page;
       // syncIframeRuleset (on window/tab close) turns it back off when no search tab remains.
-      void setIframeRuleset(true);
-      chrome.windows.create({ url: u, type: 'normal', width: 940, height: 820 });
-      sendResponse({ ok: true });
-      return false;
+      setIframeRuleset(!COMMENT_TABS).then(() => openCommentSearch(u))
+        .then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: String(e) }));
+      return true;
     }
 
     case 'SYF_COMMENTS_PAGE':

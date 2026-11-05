@@ -11,12 +11,11 @@ import {
 } from '../common/messages';
 import { isVideoId, membersOnlyCss, MEMBER_VIDEO_CAP, type MemberVideoState } from '../common/members-only';
 import { isChannelId } from '../common/channel-exceptions';
+import { IS_SAFARI, youtubeOrigin } from '../common/platform';
+import { HOME_CHIP_SELECTOR, isMobileYouTube, watchMount, playerHost } from '../common/youtube-page';
 
 const TAG = '[SYF]';
 const BAR_ID = 'syf-bar';
-const HOME_CHIP_SELECTOR =
-  'ytd-feed-filter-chip-bar-renderer yt-chip-cloud-chip-renderer[chip-style="STYLE_HOME_FILTER"], ' +
-  'ytd-feed-filter-chip-bar-renderer yt-chip-cloud-chip-renderer';
 const HOME_CHIP_RETRY_MS = 12_000;
 const HOME_CHIP_RETRY_DELAY_MS = 300;
 const HOME_CHIP_CLICK_DEBOUNCE_MS = 1_500;
@@ -184,7 +183,7 @@ async function toggleHistory(): Promise<void> {
   b.dataset.state = 'loading';
   b.textContent = 'Working…';
   let res: DirectHistoryResult | undefined = await toggleHistoryFromActiveTab();
-  if (!res?.ok && !res?.attemptedSubmit) {
+  if (!IS_SAFARI && !res?.ok && !res?.attemptedSubmit) {
     res = (await chrome.runtime.sendMessage({
       type: 'SYF_HISTORY',
       action: 'toggle',
@@ -255,11 +254,7 @@ function thumbnailUrls(videoId: string): string[] {
 }
 
 function findPlayerHost(): HTMLElement | null {
-  return (
-    document.querySelector<HTMLElement>('#movie_player') ||
-    document.querySelector<HTMLElement>('#player-container-inner') ||
-    document.querySelector<HTMLElement>('#player')
-  );
+  return playerHost();
 }
 
 function updateThumbnailButton(): void {
@@ -399,7 +394,8 @@ function normalizeChipLabel(s: unknown): string {
 }
 
 function homeChips(): HTMLElement[] {
-  return Array.from(document.querySelectorAll<HTMLElement>(HOME_CHIP_SELECTOR)).filter((c) => normalizeChipLabel(c.textContent));
+  return Array.from(document.querySelectorAll<HTMLElement>(HOME_CHIP_SELECTOR)).filter((c) =>
+    normalizeChipLabel(c.textContent) && c.getAttribute('chip-style') !== 'STYLE_EXPLORE_LAUNCHER_CHIP' && !c.classList.contains('more-drawer'));
 }
 
 function chipLabel(chip: HTMLElement): string {
@@ -411,6 +407,8 @@ function isChipSelected(chip: HTMLElement): boolean {
   return (
     chip.hasAttribute('selected') ||
     chip.classList.contains('iron-selected') ||
+    chip.classList.contains('selected') ||
+    chip.getAttribute('aria-pressed') === 'true' ||
     chip.getAttribute('aria-selected') === 'true' ||
     button?.getAttribute('aria-selected') === 'true' ||
     button?.getAttribute('aria-pressed') === 'true'
@@ -418,7 +416,7 @@ function isChipSelected(chip: HTMLElement): boolean {
 }
 
 function isAllChip(chip: HTMLElement, chips = homeChips()): boolean {
-  return chipLabel(chip).toLowerCase() === 'all' || chips[0] === chip;
+  return chip.classList.contains('all-chip-renderer') || chipLabel(chip).toLowerCase() === 'all' || chips[0] === chip;
 }
 
 function chipClickTarget(chip: HTMLElement): HTMLElement {
@@ -675,7 +673,7 @@ function onHomeChipUserClick(e: MouseEvent): void {
 // SAPISIDHASH ourselves. The page's PUBLIC innertube config (api key + client context)
 // arrives via a YT_CONFIG message from the bridge. A page-world script has no way to
 // trigger this, which closes the forgeable-REPLAY write primitive.
-const YT_ORIGIN = 'https://www.youtube.com';
+const YT_ORIGIN = youtubeOrigin(location.href);
 let ytConfig: {
   apiKey?: string;
   context?: unknown;
@@ -696,6 +694,7 @@ async function sha1Hex(s: string): Promise<string> {
 }
 async function sapisidHash(): Promise<string> {
   const sap = getCookie('SAPISID') || getCookie('__Secure-3PAPISID') || getCookie('__Secure-1PAPISID');
+  if (!sap) throw new Error('Sign in to YouTube in this browser before sending feedback.');
   const ts = Math.floor(Date.now() / 1000);
   return `SAPISIDHASH ${ts}_${await sha1Hex(`${ts} ${sap} ${YT_ORIGIN}`)}`;
 }
@@ -1061,6 +1060,7 @@ function openWipePresets(): void {
           authUser: activeAuthUser(),
           pageId: activePageId(),
         } as SyfMessage)
+        .then((result) => { if (result?.ok === false) showToast('Could not open My Activity. Check website permissions and try again.'); })
         .catch(() => notifyIfContextLost());
     } catch {
       notifyIfContextLost();
@@ -1086,6 +1086,10 @@ function openWipePresets(): void {
 }
 
 function openSettingsDialog(): void {
+  if (IS_SAFARI || isMobileYouTube()) {
+    void chrome.runtime.sendMessage({ type: 'SYF_OPEN_OPTIONS' } as SyfMessage).catch(() => notifyIfContextLost());
+    return;
+  }
   document.getElementById('syf-settings')?.remove();
   const overlay = document.createElement('div');
   overlay.id = 'syf-settings';
@@ -1147,9 +1151,24 @@ function buildBar(): HTMLElement {
   const bar = document.createElement('div');
   bar.id = BAR_ID;
   bar.className = 'syf-bar';
+  const compact = isMobileYouTube() || IS_SAFARI;
+  let extra: HTMLElement = bar;
+  if (compact) {
+    bar.classList.add('syf-bar-mobile');
+    const details = document.createElement('details');
+    details.className = 'syf-more';
+    const summary = document.createElement('summary');
+    summary.textContent = 'More';
+    details.appendChild(summary);
+    extra = document.createElement('div');
+    extra.className = 'syf-more-actions';
+    details.appendChild(extra);
+    bar.appendChild(details);
+  }
 
   for (const def of BUTTONS) {
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = 'syf-btn';
     if (def.icon) btn.classList.add(`syf-${def.icon}-btn`);
     btn.dataset.action = def.action;
@@ -1166,7 +1185,9 @@ function buildBar(): HTMLElement {
     btn.disabled = false; // clickable; availability is conveyed via data-state
     btn.dataset.state = ['info', 'wipe', 'pause-history', 'thumbnail'].includes(def.action) ? 'ready' : 'disabled';
     btn.addEventListener('click', () => onClick(def.action));
-    bar.appendChild(btn);
+    if (compact && !['nah', 'hate-channel'].includes(def.action)) extra.appendChild(btn);
+    else if (compact) bar.insertBefore(btn, bar.querySelector('.syf-more'));
+    else bar.appendChild(btn);
     buttons[def.action] = btn;
   }
   updateHistoryButton();
@@ -1176,11 +1197,7 @@ function buildBar(): HTMLElement {
 }
 
 function findMount(): HTMLElement | null {
-  for (const s of ['ytd-watch-metadata', '#above-the-fold', '#primary-inner']) {
-    const el = document.querySelector<HTMLElement>(s);
-    if (el) return el;
-  }
-  return null;
+  return watchMount();
 }
 
 // Tracks the videoId we last sent a SYF_LOOKUP for, so ensureBar()'s per-tick
@@ -1432,6 +1449,13 @@ function schedule(): void {
   scheduled = true;
   requestAnimationFrame(() => {
     scheduled = false;
+    if (lastRoute !== location.href) {
+      lastRoute = location.href;
+      document.documentElement.classList.toggle('syf-home', isHomePage());
+      window.postMessage({ __syf: true, dir: 'to-page', type: 'PAGE_NAVIGATED' }, location.origin);
+      lastHomeChipAutoKey = '';
+      scheduleHomeChipMemory();
+    }
     ensureBar();
     ensureHomeChipMemory();
   });
@@ -1444,6 +1468,7 @@ function schedule(): void {
 // in place. SPA navigations remove the bar and fire the nav events below (or the 3s
 // poll), which re-arm it.
 const observer = new MutationObserver(() => schedule());
+let lastRoute = '';
 let observing = false;
 function observeForChanges(): void {
   if (observing) return;
@@ -1478,6 +1503,10 @@ function onNav(): void {
 window.addEventListener('yt-navigate-finish', onNav);
 document.addEventListener('yt-navigate-finish', onNav);
 window.addEventListener('yt-page-data-updated', onNav);
+window.addEventListener('popstate', onNav);
+window.addEventListener('pageshow', onNav);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) onNav(); });
+document.addEventListener('webkitbeginfullscreen', () => closeThumbnailOverlay(false), true);
 setInterval(schedule, 3000);
 observeForChanges();
 schedule();

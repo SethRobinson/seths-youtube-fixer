@@ -468,3 +468,28 @@ html.syf-hide-recommended-playlists ytd-watch-next-secondary-results-renderer yt
   background: #fff;
   display: block;
 }
+
+/* Phone toolbar: readable controls, with secondary actions in a disclosure. */
+.syf-bar-mobile { flex-wrap: wrap; gap: 6px; padding: 8px; container-type: normal; }
+.syf-bar-mobile .syf-btn, .syf-more summary { min-height: 44px; font-size: 13px; padding: 8px 10px; }
+.syf-bar-mobile > .syf-btn { flex: 1 1 auto; white-space: normal; }
+.syf-more { flex: 0 0 auto; }
+.syf-more[open] { flex-basis: 100%; }
+.syf-more summary { box-sizing: border-box; cursor: pointer; border-radius: 16px; background: var(--yt-spec-badge-chip-background, #272727); }
+.syf-more-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; }
+.syf-more-actions .syf-btn { flex: 1 1 auto; }
+.syf-bar-mobile .syf-thumbnail-btn { min-width: 44px; }
+
+html.syf-hide-shorts :is(ytm-reel-shelf-renderer, ytm-shorts-lockup-view-model, ytm-shorts-lockup-view-model-v2),
+html.syf-hide-shorts :is(ytm-rich-item-renderer, ytm-video-with-context-renderer, ytm-compact-video-renderer):has(a[href^="/shorts/"]),
+html.syf-hide-shorts ytm-pivot-bar-item-renderer:has(a[href^="/shorts"]) { display: none !important; }
+html.syf-hide-recommended-playlists.syf-home ytm-browse :is(ytm-rich-item-renderer, ytm-video-with-context-renderer, ytm-playlist-renderer, ytm-radio-renderer, ytm-compact-radio-renderer, ytm-compact-playlist-renderer):has(a[href*="list="]),
+html.syf-hide-recommended-playlists ytm-watch :is(ytm-compact-playlist-renderer, ytm-compact-radio-renderer, ytm-radio-renderer) { display: none !important; }
+
+@media (max-width: 600px) {
+  .syf-modal-head { flex-wrap: wrap; }
+  .syf-modal-close, .syf-thumbnail-close { min-width: 44px; min-height: 44px; }
+  .syf-wipe-presets .syf-btn { font-size: 14px; min-height: 44px; }
+  .syf-wipe-custom input { font-size: 16px; }
+  .syf-toast { max-width: calc(100vw - 32px); bottom: calc(24px + env(safe-area-inset-bottom)); }
+}

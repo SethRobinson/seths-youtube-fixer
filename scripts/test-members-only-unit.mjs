@@ -231,13 +231,13 @@ test('channel upload scope and matching continuations supply missing owners with
   let payload;
   const window = {
     ytInitialData: channelRoot('videos', modernCard('BADGE_MEMBERS_ONLY')),
-    fetch: async () => ({ clone: () => ({ json: async () => payload }) }),
+    fetch: async () => ({ clone: () => ({ text: async () => JSON.stringify(payload) }) }),
     postMessage: (message) => messages.push(message),
     addEventListener: (event, listener) => listeners.set(event, listener),
   };
   vm.runInNewContext(bridge.outputFiles[0].text, {
     window, document: { querySelector: () => null, getElementById: () => null },
-    location: { pathname: '/@Creator/videos', origin: 'https://www.youtube.com' },
+    location: { pathname: '/@Creator/videos', origin: 'https://www.youtube.com' }, URL, URLSearchParams,
     setInterval: () => 1, clearInterval: () => {},
   });
   const captured = () => JSON.parse(JSON.stringify(messages.filter((message) => message.type === 'MEMBER_VIDEOS').flatMap((message) => message.items)));

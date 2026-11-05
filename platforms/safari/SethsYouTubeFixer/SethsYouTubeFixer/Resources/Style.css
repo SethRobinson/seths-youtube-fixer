@@ -1,0 +1,35 @@
+* {
+    -webkit-user-select: none;
+    -webkit-user-drag: none;
+    cursor: default;
+}
+
+:root {
+    color-scheme: light dark;
+
+    --spacing: 20px;
+}
+
+html {
+    height: 100%;
+}
+
+body {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-direction: column;
+
+    gap: var(--spacing);
+    margin: 0 calc(var(--spacing) * 2);
+    min-height: 100%;
+    padding: 32px 0;
+    box-sizing: border-box;
+
+    font: -apple-system-short-body;
+    text-align: center;
+}
+h1 { font-size: 24px; margin: 0; }
+p { max-width: 480px; margin: 0; }
+ol { max-width: 440px; text-align: left; padding-left: 24px; }
+li { margin: 10px 0; }

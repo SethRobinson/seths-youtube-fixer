@@ -76,6 +76,12 @@ or badge shapes are left visible.
 
 ## Verification
 
+The Safari/mobile port (2026-11-05) also recognizes `videoWithContextRenderer`
+and applies the same exception-aware rules to mobile `ytm-*` video cards.
+Channel upload ownership also accepts `singleColumnBrowseResultsRenderer` tabs.
+Offline mobile DOM/exception coverage is in `scripts/test-safari-unit.mjs`;
+real iPhone validation is still pending. See `docs/safari-ios.md`.
+
 - `npm run typecheck` and `npm run build`.
 - `node scripts/test-members-only-unit.mjs`: offline badge recognition, translated
   labels, public/commerce negatives, public-state updates, invalid IDs, and CSS URL

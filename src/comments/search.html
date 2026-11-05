@@ -188,6 +188,17 @@
       .cs-hl { background: var(--hl); color: var(--hl-text); border-radius: 2px; padding: 0 1px; }
       .cs-open { flex: 0 0 auto; align-self: flex-start; border: none; background: transparent; color: var(--text2); cursor: pointer; font-size: 13px; padding: 2px 6px; border-radius: 6px; }
       .cs-open:hover { background: var(--chip-hover); color: var(--text); }
+      #cs-divider { touch-action: none; }
+      .cs-tabs #cs-divider, .cs-tabs #cs-bottom { display: none; }
+      .cs-tabs #cs-split { grid-template-rows: 1fr; }
+      @media (max-width: 600px) {
+        #cs-header { padding: 12px; align-items: flex-start; }
+        #cs-controls { flex-wrap: wrap; }
+        #cs-q { min-width: 120px; width: 100%; font-size: 16px; }
+        .cs-btn, #cs-order, .cs-open { min-height: 44px; }
+        .cs-tabs { padding-bottom: env(safe-area-inset-bottom); }
+        .cs-row { padding: 12px; }
+      }
     </style>
   </head>
   <body>
