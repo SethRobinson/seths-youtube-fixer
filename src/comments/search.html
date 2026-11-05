@@ -7,6 +7,7 @@
     <style>
       /* YouTube-style palette (light by default, dark to match YouTube's dark theme). */
       :root {
+        color-scheme: light dark;
         --bg: #f9f9f9;
         --surface: #ffffff;
         --text: #0f0f0f;
@@ -191,6 +192,10 @@
       #cs-divider { touch-action: none; }
       .cs-tabs #cs-divider, .cs-tabs #cs-bottom { display: none; }
       .cs-tabs #cs-split { grid-template-rows: 1fr; }
+      @media (pointer: coarse) {
+        #cs-q, #cs-order { font-size: 16px; }
+        .cs-btn, #cs-order, .cs-open, .cs-check { min-height: 44px; }
+      }
       @media (max-width: 600px) {
         #cs-header { padding: 12px; align-items: flex-start; }
         #cs-controls { flex-wrap: wrap; }

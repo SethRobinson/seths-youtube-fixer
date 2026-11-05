@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Seth's YouTube Fixer</title>
     <style>
+      :root { color-scheme: light dark; }
       body {
         font: 13px 'Roboto', Arial, sans-serif;
         min-width: 250px;
@@ -18,6 +19,10 @@
       .row { margin: 8px 0; }
       .muted { opacity: 0.7; }
       a { color: #3ea6ff; cursor: pointer; display: inline-block; min-height: 44px; line-height: 44px; }
+      @media (prefers-color-scheme: light) {
+        body { background: #fff; color: #1c1c1e; }
+        a { color: #065fd4; }
+      }
     </style>
   </head>
   <body>

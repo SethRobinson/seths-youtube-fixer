@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Seth's YouTube Fixer — Settings</title>
     <style>
-      :root { --accent: #065fd4; }
+      :root { --accent: #065fd4; color-scheme: light dark; }
       * { box-sizing: border-box; }
       body {
         font: 14px 'Roboto', Arial, sans-serif;
@@ -105,6 +105,37 @@
       .logbtn { border: 1px solid #ccd0d8; background: #fff; color: #0f0f0f; border-radius: 16px; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
       .empty { color: #80868b; padding: 14px 2px; }
       footer { text-align: center; margin-top: 26px; font-size: 12px; color: #5f6368; }
+      input[type='text'], input[type='password'], input[type='number'] { color: #0f0f0f; background: #fff; }
+      @media (prefers-color-scheme: dark) {
+        :root { --accent: #8dc8ff; }
+        body { color: #f5f5f7; background: #161618; }
+        .card { background: #242426; border-color: #48484f; }
+        .auto-note, .card > .desc, small, .remember-chip, .exception-status,
+        .logchannel, .logsub, .empty, footer { color: #b6b6bf; }
+        .remember-chip b { color: #f5f5f7; }
+        input[type='text'], input[type='password'], input[type='number'],
+        button.secondary, .key-toggle, .logbtn { color: #f5f5f7; background: #343438; border-color: #62626b; }
+        button { color: #102a43; }
+        button.danger { color: #fff; }
+        .help { background: #202e42; border-color: #455e7d; }
+        .meter { background: #48484f; }
+        .logrow { border-color: #48484f; }
+        .src { color: #0f0f0f; }
+        #logStatus { color: #ffd180; }
+        .exception-status[data-error='true'] { color: #ffb4ab; }
+      }
+      @media (pointer: coarse) {
+        input[type='text'], input[type='password'], input[type='number'] { font-size: 16px; min-height: 44px; }
+        button, button.small, .logbtn { min-height: 44px; }
+        .check { align-items: center; min-height: 44px; }
+      }
+      @media (max-width: 400px) {
+        body { padding: 20px 12px 60px; }
+        .card { padding: 16px 12px; }
+        .member-exceptions { margin-left: 0; }
+        .exception-add { flex-wrap: wrap; }
+        .exception-add input { flex-basis: 100%; }
+      }
     </style>
   </head>
   <body>

@@ -1,0 +1,15 @@
+Seth's YouTube Fixer icon — 2026-11-05
+
+Artwork: store-assets/icon-master.png (original high-resolution generated image).
+Tool: built-in image_gen; edit based on the previous src/icons/icon128.png.
+Export all runtime sizes on Windows: powershell -File scripts/export-icons.ps1
+The script only resamples approved artwork and exports opaque RGB PNGs.
+It updates browser icons, the store image, and the iOS app/onboarding icons.
+
+The iOS asset catalog provides one default icon. The old explicit dark/tinted
+entries reused the default image; they are removed so iOS can generate its own
+appearance treatments. Apple documents this fallback here:
+https://developer.apple.com/documentation/xcode/configuring-your-app-icon
+
+Generation prompt (verbatim):
+Use case: logo-brand. Edit target: the supplied play-and-wrench app icon for Seth's YouTube Fixer. Redesign it as a polished, exceptionally crisp iPhone/iPad app icon at 1024x1024. Preserve the recognizable warm red palette, large white right-pointing play triangle in the upper-left/central area, and white open-ended wrench angled diagonally upward toward the right in the lower-right area. Improve the wrench silhouette so it clearly reads as a tool, with precise balanced geometry, a clean open jaw and a rounded handle. Keep the triangle and wrench separate with generous clear negative space. Minimal premium vector-like graphic, very subtle red-to-deep-crimson background gradient, nearly flat white symbols, no gloss, no tiny details, no text, no badge. The RED BACKGROUND fills the ENTIRE SQUARE canvas edge to edge, including all four corners: no white border, no inset rounded tile, no mockup, no outer drop shadow, no transparency. iOS supplies the rounded corner mask. Center the combined glyph within a safe margin of approximately 16%, with strong readability at small sizes. Output one finished square icon, not a grid.

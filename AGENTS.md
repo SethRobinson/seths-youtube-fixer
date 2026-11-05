@@ -32,9 +32,10 @@ ids stay `nah` / `hate-channel`** and the cache/log keys are unchanged.
 
 ## Status
 
-- **Safari/iPhone port (2026-11-05, development 0.1.3):** `docs/safari-ios.md` covers the shared build, mobile adapters, Xcode wrapper, remote commands, and validation. TypeScript, 26 offline tests, both JS bundles, native WebKit validation, and signed iOS build pass. Version 0.1.3 (build 4) is installed on the physical iPhone 17 Pro. Seth confirmed the controls appear and reports the updated build seems to work; the detailed acceptance matrix is not individually verified. SSH signing needed the optional `loginSession` build mode after the keychain was unlocked. No computer-control permission was granted.
+- **Safari/iPhone/iPad port (2026-11-05, development 0.1.3):** `docs/safari-ios.md` covers builds, mobile adapters, validation, and known gaps. Build 5 is installed on the physical iPhone 17 Pro and 13-inch M4 iPad Pro. TypeScript, 26 offline tests, both bundles, WebKit validation, and signing pass. Seth approved build 4 after trying it; build 5/iPad UI checks remain manual. SSH signing uses optional `loginSession` mode. No computer-control permission was granted.
 - **Safari contrast fix (build 4):** the Safari build appends `src/content/safari-theme.css` to its content stylesheet. Toolbar/disclosure/dialog colors use complete palettes selected by `prefers-color-scheme`, scoped to extension UI. This avoids mobile YouTube's partial desktop CSS variables mixing dark text with a dark fallback background. Unavailable buttons use readable muted text instead of opacity. Palette contrast and bundling checked; Seth approved committing the updated build after trying it on the phone.
 - **Build targets:** Chromium remains `dist/`; `npm run build:safari` produces `dist-safari/`. Safari uses tabs for settings/comments and a foreground My Activity review; it ships no iframe header-stripping rule. Machine/signing/device configuration belongs in ignored `platforms/safari/build.local.json` or `agents_local.md`.
+- **Build 5 polish and review:** settings/popup/My Activity review follow light/dark appearance; touch controls use 44px targets and 16px text inputs. The sharper play/wrench artwork is `store-assets/icon-master.png`; `scripts/export-icons.ps1` exports all sizes and `store-assets/icon-artwork.txt` records its prompt. Remaining gaps include unverified account routing for log Undo/Redo, comment cache loss on tab discard, and loaded-items-only activity review; see `docs/safari-ios.md`.
 
 - **Members-only filter (2026-11-04):** `docs/members-only-filter.md` covers detection, rendering, and tests.
   Default off; manual channel exceptions resolve handles/URLs to stable IDs. Upload grids omit uploader IDs: scope fallbacks to the selected uploads tab and its continuation target, never the whole channel page.
@@ -505,6 +506,7 @@ correct `watch?v=`/`/channel/UC…` links — does not mutate the stored log).
 - `npm run build:safari` / `npm run watch:safari` — Safari bundle to `dist-safari/`.
 - `npm run safari:check` — native WebKit manifest validation + unsigned iOS build over SSH.
 - `npm run safari:build` / `npm run safari:install` — signed remote build / build + device installation (no app launch). See `docs/safari-ios.md` for local configuration and keychain requirements.
+- `powershell -File scripts/export-icons.ps1` — resize the approved master artwork into browser/store/iOS PNGs on Windows.
 
 - `npm run build` / `npm run watch` — bundle `src/` → `dist/`.
 - `npm run typecheck` — `tsc --noEmit`.

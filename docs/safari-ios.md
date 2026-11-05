@@ -1,4 +1,4 @@
-# Safari on iPhone
+# Safari on iPhone and iPad
 
 Development version **0.1.3** shares TypeScript with Chromium and includes an iOS
 Safari Web Extension wrapper. Personal use is the initial target. Enable website
@@ -24,6 +24,9 @@ access in Safari; this extension cannot modify the native YouTube app.
   disclosure, dialogs, and toasts follow `prefers-color-scheme` with their own
   paired foreground/background colors. Unavailable buttons keep readable muted
   text; the surrounding page's color scheme is not changed.
+- Settings, the popup, and the foreground My Activity review also follow system
+  appearance. Touch input fields use 16px fonts, and touch buttons have 44px targets,
+  including iPad layouts. Settings wrap the channel-exception form on narrow screens.
 - Safari startup does not require `onSuspend`, windows, or DNR. Capture and quota
   writes finish during message processing. Log/undo acknowledgments wait for
   storage on both platforms.
@@ -87,6 +90,11 @@ intermittent. Strict host-key checking stays on. Keep passwords, certificates,
 private keys, provisioning profiles, and machine/account details out of Git.
 The wrapper has no hardcoded development team.
 
+To install on another paired device, set `SYF_IOS_DEVICE` for that invocation;
+leave the local configuration's default device unchanged. Both iPhone and iPad
+are included in the wrapper's supported device families. The current iPad was
+already registered in the development provisioning profile.
+
 If SSH cannot access an otherwise unlocked signing key, use `loginSession: true`
 or `SYF_SAFARI_LOGIN_SESSION=1`. This runs just the compiler/signing command as a
 temporary LaunchAgent in the existing Mac login session, then unloads it. Keep
@@ -107,8 +115,14 @@ Verified:
 - Public mobile YouTube JavaScript confirms metadata/chip names and PBJ navigation.
 - Native macOS WebKit resource validation: `injected=1 background=1 errors=0`.
 - Full unsigned and signed iOS app/embedded extension builds in Xcode 27.2.
-- Deep/strict signature validation and installation on the physical iPhone 17 Pro.
-  Device app metadata confirms **0.1.3, build 4**.
+- Deep/strict signature validation and installation on the physical iPhone 17 Pro
+  and **13-inch M4 iPad Pro**. Both device app queries confirm **0.1.3, build 5**.
+- Build 5 replaces the upscaled icon with high-resolution play/wrench artwork,
+  exports all browser/store/iOS sizes, and lets iOS generate icon appearance
+  treatments. The original artwork and exact generation prompt are in
+  `store-assets/icon-master.png` and `store-assets/icon-artwork.txt`.
+- Edited CSS parses for Safari 18. Exported icon dimensions and opaque RGB PNG
+  format pass checks; 32px and 128px icons were inspected as local image files.
 - Seth confirmed that the watch-page controls appear on the iPhone. He reported
   black text on nearly black buttons in build 3; build 4 replaces mixed YouTube
   CSS variables/fallbacks with complete light/dark palettes. CSS parsing and
@@ -146,6 +160,25 @@ fetch/XHR/PBJ capture, startup without optional APIs, persistence, mobile-origin
 apply/undo, signed-out rejection, comment-tab reuse/cache, exact reviewed deletion,
 background interruption, and account routing. Existing Chrome/CDP UI tests need
 explicit browser-control permission and were not run.
+
+## Remaining work found in the build 5 review
+
+- **Account routing for log Undo/Redo:** `relayReplay` in
+  `src/background/service-worker.ts` picks the first open YouTube tab, without
+  checking that tab's account. Account-switch cache clearing reduces stale state
+  but does not make this routing account-aware. Harden this before relying on log
+  replay with different accounts open across tabs. A future fix should verify
+  both action ownership and the target tab's live account immediately before submit.
+- **Comment search durability:** results and scan position are held in the search
+  page's memory. Safari discarding/reloading that tab loses them. Persisted
+  checkpoints and explicit resume are not implemented.
+- **Activity coverage:** Forget recent reviews only currently loaded items. It
+  does not promise an exhaustive scan of the selected time window; load additional
+  activity before scanning. The exact reviewed-token deletion guard remains in place.
+- **Device acceptance:** account switches, feedback/undo, background/lock/resume,
+  permissions, and one deliberate reviewed deletion still need the manual cases
+  above. The iPad has been installed, but its Safari UI has not been operated by
+  the agent. Build 5's theme/touch changes also await on-device appearance checks.
 
 ## References
 

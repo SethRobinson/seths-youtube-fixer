@@ -1256,7 +1256,7 @@ function notifyIfContextLost(): void {
   }
   if (!valid && !contextLostNotified) {
     contextLostNotified = true;
-    showToast('Seth’s YouTube Fixer was updated — reload this page (Ctrl+R) to reconnect. Buttons won’t work until you do.');
+    showToast('Seth’s YouTube Fixer was updated — reload this page to reconnect. Buttons won’t work until you do.');
   }
 }
 

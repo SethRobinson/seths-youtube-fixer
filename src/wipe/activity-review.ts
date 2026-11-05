@@ -12,14 +12,18 @@ export function mountActivityReview(
   host.id = 'syf-activity-review';
   const shadow = host.attachShadow({ mode: 'closed' });
   shadow.innerHTML = `<style>
-    :host { position: fixed; inset: 12px 12px auto; z-index: 2147483647; }
+    :host { position: fixed; inset: 12px 12px auto; z-index: 2147483647; color-scheme: light;
+      --panel: #fff; --text: #1c1c1e; --control: #e9e9ed; --border: #777; }
+    @media (prefers-color-scheme: dark) {
+      :host { color-scheme: dark; --panel: #242426; --text: #f5f5f7; --control: #343438; --border: #888; }
+    }
     section { box-sizing: border-box; max-width: 640px; max-height: 85dvh; overflow: auto; margin: auto; padding: 16px;
-      background: #161616; color: #fff; border: 1px solid #777; border-radius: 16px; font: 15px/1.5 system-ui; box-shadow: 0 8px 30px #0008; }
+      background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 16px; font: 15px/1.5 system-ui; box-shadow: 0 8px 30px #0008; }
     h2 { font-size: 19px; margin: 0 0 8px; } p { margin: 8px 0; }
-    button, input { font: inherit; font-size: 16px; min-height: 44px; border: 1px solid #888; border-radius: 10px; padding: 8px; color: inherit; background: #333; box-sizing: border-box; }
+    button, input { font: inherit; font-size: 16px; min-height: 44px; border: 1px solid var(--border); border-radius: 10px; padding: 8px; color: inherit; background: var(--control); box-sizing: border-box; }
     input { width: 88px; } button { cursor: pointer; } button:disabled { opacity: .5; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-    .danger { background: #b00020; } ol { padding-left: 24px; max-height: 34dvh; overflow: auto; }
+    .danger { background: #b00020; color: #fff; } ol { padding-left: 24px; max-height: 34dvh; overflow: auto; }
     li { margin: 8px 0; overflow-wrap: anywhere; } output { display: block; margin: 10px 0; }
   </style><section role="dialog" aria-label="Forget recent YouTube activity">
     <h2>Forget recent</h2>
